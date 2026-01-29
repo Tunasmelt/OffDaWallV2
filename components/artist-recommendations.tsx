@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { TrackCard } from './track-card';
 import { AudioPlayer } from './audio-player';
 import { Loader2 } from 'lucide-react';
 import type { Recommendations, ScoredTrack } from '@/lib/recommendation-engine';
 import { getRecommendationReason } from '@/lib/recommendation-engine';
+import { fetchJsonCached } from '@/lib/client/fetch-json';
 
 interface ArtistRecommendationsProps {
   artistMbid: string;
@@ -31,26 +32,56 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
   const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
-    async function fetchRecommendations() {
+    const controller = new AbortController();
+    let active = true;
+
+    async function fetchRecommendations(attempt: number, refresh = false) {
       try {
         setLoading(true);
-        const response = await fetch(`/api/artists/${artistMbid}/recommendations`);
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch recommendations');
+        setError(null);
+        const url = `/api/artists/${artistMbid}/recommendations${refresh ? '?refresh=1' : ''}`;
+        const data = await fetchJsonCached<Recommendations>(url, {
+          cacheKey: `recommendations:${artistMbid}:${refresh ? 'refresh' : 'base'}`,
+          ttlMs: 60_000,
+          signal: controller.signal,
+          shouldCache: (payload) =>
+            payload && Object.values(payload).some((list: any) => Array.isArray(list) && list.length > 0),
+          timeoutMs: 15_000,
+          retryCount: 1,
+          retryDelayMs: 400,
+        });
+        if (!active) return;
+        const hasAny = Object.values(data || {}).some(
+          (list) => Array.isArray(list) && list.length > 0
+        );
+        if (!hasAny && attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          if (active) {
+            await fetchRecommendations(1, true);
+          }
+          return;
         }
-
-        const data = await response.json();
         setRecommendations(data);
       } catch (err) {
+        if ((err as Error)?.name === 'AbortError') {
+          return;
+        }
         console.error('[OffDaWallV2] Recommendations fetch error:', err);
-        setError('Could not load recommendations');
+        if (active) {
+          setError('Could not load recommendations');
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
-    fetchRecommendations();
+    fetchRecommendations(0);
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [artistMbid]);
 
   const handlePlayTrack = (track: ScoredTrack) => {
@@ -167,9 +198,11 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
       {currentTrack && currentTrack.previewUrl && (
         <div className="fixed bottom-0 left-0 right-0 z-50">
           <AudioPlayer
-            track={currentTrack}
+            previewUrl={currentTrack.previewUrl}
+            trackTitle={currentTrack.title}
+            artistName={currentTrack.artistName}
             isPlaying={isPlaying}
-            onPlayPause={() => setIsPlaying(!isPlaying)}
+            onPlayPause={setIsPlaying}
             onEnded={() => setIsPlaying(false)}
           />
         </div>

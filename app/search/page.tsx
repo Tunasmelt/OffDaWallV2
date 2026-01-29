@@ -3,47 +3,68 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { SearchX } from 'lucide-react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { ArtistSkeleton } from '@/components/artist-skeleton';
-import { getAllGenres } from '@/lib/genres';
 import type { Artist } from '@/lib/types';
+import { useArtistImage } from '@/components/hooks/use-artist-image';
+import { FallbackImage } from '@/components/ui/fallback-image';
+import { fetchJsonCached } from '@/lib/client/fetch-json';
+import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 
 function SearchResults() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q');
-  const genreFilter = searchParams.get('genre');
-  
   const [results, setResults] = useState<Artist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedGenre, setSelectedGenre] = useState<string | null>(genreFilter);
-  
-  const genres = getAllGenres();
 
   useEffect(() => {
     if (!query) return;
 
-    const fetchResults = async () => {
+    const controller = new AbortController();
+    let active = true;
+
+    const fetchResults = async (attempt: number) => {
       setIsLoading(true);
       try {
-        const url = selectedGenre 
-          ? `/api/search?q=${encodeURIComponent(query)}&genre=${encodeURIComponent(selectedGenre)}`
-          : `/api/search?q=${encodeURIComponent(query)}`;
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        setResults(data.results || []);
+        const url = `/api/search?q=${encodeURIComponent(query)}&details=1`;
+        const data = await fetchJsonCached<{ results?: Artist[] }>(url, {
+          cacheKey: `search:${query}:details`,
+          ttlMs: 30_000,
+          signal: controller.signal,
+          shouldCache: (payload) => Array.isArray(payload?.results) && payload.results.length > 0,
+        });
+        if (!active) return;
+        const nextResults = data.results || [];
+        if (nextResults.length === 0 && attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+          if (active) {
+            await fetchResults(1);
+          }
+          return;
+        }
+        setResults(nextResults);
       } catch (error) {
+        if ((error as Error)?.name === 'AbortError') {
+          return;
+        }
         console.error('[OffDaWallV2] Search results error:', error);
-        setResults([]);
+        if (active) {
+          setResults([]);
+        }
       } finally {
-        setIsLoading(false);
+        if (active) {
+          setIsLoading(false);
+        }
       }
     };
 
-    fetchResults();
-  }, [query, selectedGenre]);
+    fetchResults(0);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [query]);
 
   if (!query) {
     return (
@@ -82,33 +103,6 @@ function SearchResults() {
           )}
         </div>
 
-        {/* Genre Filter */}
-        <div className="mb-8 flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setSelectedGenre(null)}
-            className={`px-4 py-2 text-sm font-medium rounded border-2 transition-colors ${
-              !selectedGenre 
-                ? 'border-primary bg-primary text-primary-foreground' 
-                : 'border-border hover:border-primary'
-            }`}
-          >
-            All Genres
-          </button>
-          {genres.map((genre) => (
-            <button
-              key={genre.slug}
-              onClick={() => setSelectedGenre(genre.slug)}
-              className={`px-4 py-2 text-sm font-medium rounded border-2 transition-colors ${
-                selectedGenre === genre.slug 
-                  ? 'border-primary bg-primary text-primary-foreground' 
-                  : 'border-border hover:border-primary'
-              }`}
-            >
-              {genre.name}
-            </button>
-          ))}
-        </div>
-
         {/* Results Grid */}
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
@@ -135,36 +129,7 @@ function SearchResults() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
             {results.map((artist, index) => (
-              <Link
-                key={artist.mbid}
-                href={`/artists/${artist.mbid}`}
-                className="group"
-                style={{
-                  transform: `rotate(${(index % 3 - 1) * 0.5}deg)`,
-                }}
-              >
-                <div className="bg-card border-2 border-border p-4 transition-all hover:border-primary hover:rotate-0 hover:scale-105">
-                  {artist.image && (
-                    <div className="relative aspect-square mb-3 overflow-hidden">
-                      <Image
-                        src={artist.image || "/placeholder.svg"}
-                        alt={artist.name}
-                        fill
-                        className="object-cover grayscale group-hover:grayscale-0 transition-all"
-                      />
-                    </div>
-                  )}
-                  <h3 className="font-black text-lg mb-1 leading-tight">{artist.name}</h3>
-                  {artist.genres && artist.genres.length > 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      {artist.genres.slice(0, 2).join(', ')}
-                    </p>
-                  )}
-                  {artist.country && (
-                    <p className="text-xs text-muted-foreground mt-1">{artist.country}</p>
-                  )}
-                </div>
-              </Link>
+              <SearchResultCard key={artist.mbid} artist={artist} index={index} />
             ))}
           </div>
         )}
@@ -188,6 +153,70 @@ export default function SearchPage() {
     }>
       <SearchResults />
     </Suspense>
+  );
+}
+
+function SearchResultCard({ artist, index }: { artist: Artist; index: number }) {
+  const shouldFetchImage = index < 12;
+  const [imageError, setImageError] = useState(false);
+  const imageUrl = useArtistImage(artist, shouldFetchImage, imageError);
+  const resolvedImage = imageUrl || artist.imageUrl || artist.image;
+  const hasArtistLink = Boolean(artist.mbid);
+
+  const card = (
+    <div className="bg-card border-2 border-border p-4 transition-all hover:border-primary hover:rotate-0 hover:scale-105">
+      {resolvedImage ? (
+        <div className="relative aspect-square mb-3 overflow-hidden">
+          <FallbackImage
+            src={resolvedImage || "/placeholder.svg"}
+            alt={artist.name}
+            fill
+            className="object-cover grayscale group-hover:grayscale-0 transition-all"
+            sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+            fallbackSrc="/placeholder.svg"
+            onError={() => setImageError(true)}
+          />
+        </div>
+      ) : (
+        <div className="relative aspect-square mb-3 overflow-hidden">
+          <ImagePlaceholder label={artist.name} textClassName="text-5xl" />
+        </div>
+      )}
+      <h3 className="font-black text-lg mb-1 leading-tight">{artist.name}</h3>
+      {artist.genres && artist.genres.length > 0 && (
+        <p className="text-sm text-muted-foreground">
+          {artist.genres.slice(0, 2).join(', ')}
+        </p>
+      )}
+      {artist.country && (
+        <p className="text-xs text-muted-foreground mt-1">{artist.country}</p>
+      )}
+    </div>
+  );
+
+  if (!hasArtistLink) {
+    return (
+      <div
+        className="group"
+        style={{
+          transform: `rotate(${(index % 3 - 1) * 0.5}deg)`,
+        }}
+      >
+        {card}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={`/artists/${artist.mbid}`}
+      className="group"
+      style={{
+        transform: `rotate(${(index % 3 - 1) * 0.5}deg)`,
+      }}
+    >
+      {card}
+    </Link>
   );
 }
 

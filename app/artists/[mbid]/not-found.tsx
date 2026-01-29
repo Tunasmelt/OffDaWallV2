@@ -9,7 +9,7 @@ export default function NotFound() {
           {/* Logo */}
           <div className="mb-8">
             <Image
-              src="/logo-transparent.png"
+              src="/logo-transparent-v2.png"
               alt="OffDaWall"
               width={240}
               height={80}

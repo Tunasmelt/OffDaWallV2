@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
+import { cache } from 'react';
 import { ArtistHero } from '@/components/artist-hero';
 import { ArtistBio } from '@/components/artist-bio';
 import { RelatedArtists } from '@/components/related-artists';
@@ -12,28 +13,48 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
 import { generateArtistMetadata } from '@/lib/metadata';
+import { getBaseUrl } from '@/lib/server/base-url';
 import type { Artist } from '@/lib/types';
+import { isValidUuid } from '@/lib/ids';
+import { isDebugMode } from '@/lib/observability';
 
-async function getArtist(mbid: string): Promise<Artist | null> {
+type ArtistFetchResult = {
+  status: number;
+  artist: Artist | null;
+  error?: {
+    code?: string;
+    message?: string;
+    provider?: string;
+  };
+  meta?: {
+    providersUsed?: string[];
+  };
+};
+
+const getArtist = cache(async (mbid: string): Promise<ArtistFetchResult> => {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 
-                    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 
-                    'http://localhost:3000';
+    const baseUrl = getBaseUrl();
     
     const res = await fetch(`${baseUrl}/api/artists/${mbid}`, {
       next: { revalidate: 86400 }, // 24 hours
     });
 
-    if (!res.ok) {
-      return null;
+    const status = res.status;
+    const payload = await res.json().catch(() => null);
+    if (res.ok && payload?.ok === true) {
+      return { status, artist: payload.data, meta: payload?.meta };
     }
-
-    return res.json();
+    return {
+      status,
+      artist: null,
+      error: payload?.error,
+      meta: payload?.meta,
+    };
   } catch (error) {
     console.error('[OffDaWallV2] Error fetching artist:', error);
-    return null;
+    return { status: 503, artist: null, error: { message: 'fetch_failed' } };
   }
-}
+});
 
 export async function generateMetadata({ 
   params 
@@ -41,15 +62,19 @@ export async function generateMetadata({
   params: Promise<{ mbid: string }> 
 }): Promise<Metadata> {
   const { mbid } = await params;
-  const artist = await getArtist(mbid);
+  const decoded = decodeURIComponent(mbid);
+  if (!isValidUuid(decoded)) {
+    return { title: 'Bad Artist ID - OffDaWall' };
+  }
+  const { artist } = await getArtist(decoded);
 
   if (!artist) {
     return {
-      title: 'Artist Not Found - OffDaWall',
+      title: 'Artist Temporarily Unavailable - OffDaWall',
     };
   }
 
-  return generateArtistMetadata(artist.name, artist.bio, artist.imageUrl);
+  return generateArtistMetadata(artist.name, artist.bio, artist.imageUrl, artist.mbid);
 }
 
 export default async function ArtistPage({ 
@@ -58,10 +83,59 @@ export default async function ArtistPage({
   params: Promise<{ mbid: string }> 
 }) {
   const { mbid } = await params;
-  const artist = await getArtist(mbid);
+  const decoded = decodeURIComponent(mbid);
+
+  if (!isValidUuid(decoded)) {
+    return (
+      <main className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-24 text-center">
+          <h1 className="text-3xl md:text-5xl font-black mb-4">Bad Artist ID</h1>
+          <p className="text-muted-foreground mb-8">
+            The link you opened is not a valid artist ID.
+          </p>
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors"
+          >
+            ← Back to Home
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  const { artist, status, error, meta } = await getArtist(decoded);
 
   if (!artist) {
-    notFound();
+    if (status === 404) {
+      notFound();
+    }
+    return (
+      <main className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-24 text-center">
+          <h1 className="text-3xl md:text-5xl font-black mb-4">Artist Temporarily Unavailable</h1>
+          <p className="text-muted-foreground mb-8">
+            We couldn&apos;t load this artist right now. Please try again.
+          </p>
+          {isDebugMode() && (
+            <div className="mx-auto mb-8 max-w-xl text-left text-xs text-muted-foreground border border-border bg-card p-4">
+              <div className="font-bold text-sm mb-2">Debug</div>
+              <div>mbid: {decoded}</div>
+              <div>status: {status}</div>
+              <div>error.code: {error?.code || 'n/a'}</div>
+              <div>error.provider: {error?.provider || 'n/a'}</div>
+              <div>providersUsed: {(meta?.providersUsed || []).join(', ') || 'n/a'}</div>
+            </div>
+          )}
+          <Link
+            href={`/artists/${decoded}`}
+            className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground font-bold hover:bg-primary/90 transition-colors"
+          >
+            ↻ Retry
+          </Link>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -72,7 +146,7 @@ export default async function ArtistPage({
           <div className="flex items-center justify-between gap-4">
             <Link href="/">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={200}
                 height={67}
@@ -145,7 +219,7 @@ export default async function ArtistPage({
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <Link href="/">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={120}
                 height={40}

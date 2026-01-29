@@ -3,6 +3,8 @@
 import { Play, Pause } from 'lucide-react';
 import { useState } from 'react';
 import type { ScoredTrack } from '@/lib/recommendation-engine';
+import { FallbackImage } from '@/components/ui/fallback-image';
+import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 
 interface TrackCardProps {
   track: ScoredTrack;
@@ -23,7 +25,7 @@ export function TrackCard({ track, reason, onPlay, isPlaying }: TrackCardProps) 
 
   return (
     <div 
-      className="group relative bg-card border border-border p-4 transform transition-all duration-300 hover:scale-105 hover:-rotate-1 hover:border-primary hover:shadow-lg cursor-pointer"
+      className={`group relative bg-card border border-border p-4 transform transition-all duration-300 hover:scale-105 hover:-rotate-1 hover:border-primary hover:shadow-lg ${track.previewUrl ? 'cursor-pointer' : 'cursor-default'}`}
       onClick={() => track.previewUrl && onPlay(track)}
       style={{
         clipPath: 'polygon(0 0, 100% 0, 100% 97%, 95% 100%, 0 100%)',
@@ -43,16 +45,17 @@ export function TrackCard({ track, reason, onPlay, isPlaying }: TrackCardProps) 
         {/* Album Art */}
         <div className="flex-shrink-0 w-16 h-16 bg-muted relative overflow-hidden group-hover:ring-2 group-hover:ring-primary transition-all">
           {track.albumArt && !imageError ? (
-            <img
+            <FallbackImage
               src={track.albumArt || "/placeholder.svg"}
               alt={track.title}
-              className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all"
+              fill
+              className="object-cover grayscale group-hover:grayscale-0 transition-all"
+              sizes="64px"
+              fallbackSrc="/placeholder.svg"
               onError={() => setImageError(true)}
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-2xl font-black text-muted-foreground">
-              {track.title.charAt(0)}
-            </div>
+            <ImagePlaceholder label={track.title} textClassName="text-2xl" className="border-none" />
           )}
           
           {/* Play button overlay */}

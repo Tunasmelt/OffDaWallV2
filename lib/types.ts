@@ -12,16 +12,21 @@ export interface Artist {
   area?: string;
   beginDate?: string;
   endDate?: string;
+  image?: string;
   imageUrl?: string;
   bio?: string;
+  popularity?: number;
   popularityScore?: number;
   listeners?: number;
   playCount?: number;
+  relatedArtists?: RelatedArtist[];
   // Social links from AudioDB
   website?: string;
   twitter?: string;
   facebook?: string;
 }
+
+export type RelatedArtist = Artist;
 
 export interface Track {
   id: string;
@@ -30,16 +35,21 @@ export interface Track {
   artistMbid?: string;
   albumTitle?: string;
   albumMbid?: string;
+  albumArt?: string;
   duration?: number; // in seconds
   releaseDate?: string;
   previewUrl?: string; // 30s preview from Deezer
   popularity?: number;
+  trackNumber?: number;
+  rank?: number;
   listeners?: number;
   playCount?: number;
 }
 
 export interface Album {
   mbid: string;
+  releaseMbid?: string;
+  releaseGroupMbid?: string;
   title: string;
   artistMbid: string;
   artistName: string;
@@ -57,6 +67,7 @@ export interface Genre {
   tags: string[]; // MusicBrainz tags to query
   artistCount?: number;
   previewArtists?: Artist[];
+  previewImageUrl?: string;
 }
 
 export interface Recommendation {
@@ -75,6 +86,7 @@ export interface CacheEntry<T> {
   data: T;
   timestamp: number;
   ttl: number; // Time to live in milliseconds
+  staleUntil?: number;
 }
 
 // MusicBrainz API response types
@@ -151,6 +163,7 @@ export interface DeezerTrack {
   duration: number;
   preview: string;
   release_date?: string;
+  rank?: number;
   artist: {
     id: number;
     name: string;

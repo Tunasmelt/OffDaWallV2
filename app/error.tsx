@@ -22,7 +22,7 @@ export default function Error({
           {/* Logo */}
           <Link href="/">
             <Image
-              src="/logo-transparent.png"
+              src="/logo-transparent-v2.png"
               alt="OffDaWall"
               width={240}
               height={80}

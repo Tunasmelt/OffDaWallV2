@@ -4,11 +4,12 @@ import type { CacheEntry } from './types';
 class MemoryCache {
   private cache: Map<string, CacheEntry<any>> = new Map();
 
-  set<T>(key: string, data: T, ttl: number): void {
+  set<T>(key: string, data: T, ttl: number, staleTtl: number = ttl * 3): void {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
       ttl,
+      staleUntil: Date.now() + ttl + staleTtl,
     });
   }
 
@@ -22,13 +23,33 @@ class MemoryCache {
     const now = Date.now();
     const age = now - entry.timestamp;
 
-    // Check if cache entry has expired
     if (age > entry.ttl) {
-      this.cache.delete(key);
       return null;
     }
 
     return entry.data as T;
+  }
+
+  getWithMeta<T>(key: string): { data: T | null; hit: boolean; stale: boolean } {
+    const entry = this.cache.get(key);
+    if (!entry) {
+      return { data: null, hit: false, stale: false };
+    }
+
+    const now = Date.now();
+    const age = now - entry.timestamp;
+    const staleUntil = entry.staleUntil ?? entry.timestamp + entry.ttl * 4;
+
+    if (age <= entry.ttl) {
+      return { data: entry.data as T, hit: true, stale: false };
+    }
+
+    if (now <= staleUntil) {
+      return { data: entry.data as T, hit: true, stale: true };
+    }
+
+    this.cache.delete(key);
+    return { data: null, hit: false, stale: false };
   }
 
   has(key: string): boolean {
@@ -38,7 +59,7 @@ class MemoryCache {
     const now = Date.now();
     const age = now - entry.timestamp;
 
-    if (age > entry.ttl) {
+    if (age > entry.ttl && Date.now() > (entry.staleUntil ?? entry.timestamp + entry.ttl * 4)) {
       this.cache.delete(key);
       return false;
     }
@@ -95,8 +116,12 @@ export function getFromCache<T>(key: string): T | null {
   return cache.get<T>(key);
 }
 
-export function setCache<T>(key: string, data: T, ttl: number): void {
-  cache.set(key, data, ttl);
+export function getFromCacheWithMeta<T>(key: string) {
+  return cache.getWithMeta<T>(key);
+}
+
+export function setCache<T>(key: string, data: T, ttl: number, staleTtl?: number): void {
+  cache.set(key, data, ttl, staleTtl);
 }
 
 // Run cleanup every hour

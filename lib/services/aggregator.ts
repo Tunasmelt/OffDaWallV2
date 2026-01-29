@@ -1,7 +1,10 @@
 import type { Artist } from '../types';
+import { normalizeImageUrl } from '../images';
 import * as MusicBrainz from './musicbrainz';
 import * as AudioDB from './audiodb';
 import * as Deezer from './deezer';
+import * as LastFm from './lastfm';
+import { getArtistCoverArtFallback } from './image-resolver';
 
 /**
  * Aggregate artist data from multiple sources
@@ -34,10 +37,16 @@ export async function getCompleteArtist(mbid: string): Promise<Artist | null> {
     }
 
     // Merge all data
+    let resolvedImage = normalizeImageUrl(audioDBData?.imageUrl || deezerData?.imageUrl || mbArtist.image);
+    if (!resolvedImage) {
+      resolvedImage = normalizeImageUrl(await getArtistCoverArtFallback(mbid));
+    }
     const completeArtist: Artist = {
       ...mbArtist,
       ...audioDBData,
       ...deezerData,
+      imageUrl: resolvedImage,
+      image: resolvedImage || mbArtist.image,
     };
 
     return completeArtist;
@@ -72,6 +81,19 @@ export async function getArtistProfile(mbid: string): Promise<Artist | null> {
     const audioDBData = await AudioDB.getArtistByMBID(mbid);
     console.log('[OffDaWallV2] AudioDB data:', audioDBData ? 'found' : 'not found');
 
+    // Last.fm fallback for image/bio
+    let lastFmData: Partial<Artist> | null = null;
+    if (process.env.LASTFM_API_KEY) {
+      const lfInfoByMbid = await LastFm.getArtistInfoByMbid(mbid);
+      const lfInfo = lfInfoByMbid || (mbArtist?.name ? await LastFm.getArtistInfoByName(mbArtist.name) : null);
+      if (lfInfo) {
+        lastFmData = {
+          imageUrl: LastFm.extractArtistImage(lfInfo),
+          bio: LastFm.extractArtistBio(lfInfo),
+        };
+      }
+    }
+
     // Get Deezer stats for popularity
     let deezerData = null;
     try {
@@ -88,11 +110,18 @@ export async function getArtistProfile(mbid: string): Promise<Artist | null> {
     }
 
     // Merge all data
+    let resolvedImage = normalizeImageUrl(audioDBData?.imageUrl || lastFmData?.imageUrl || mbArtist.image);
+    if (!resolvedImage) {
+      resolvedImage = normalizeImageUrl(await getArtistCoverArtFallback(mbid));
+    }
     const completeArtist: Artist = {
       ...mbArtist,
-      image: audioDBData?.imageUrl || mbArtist.image,
-      bio: audioDBData?.bio || mbArtist.bio,
-      socialLinks: audioDBData?.socialLinks || mbArtist.socialLinks,
+      imageUrl: resolvedImage,
+      image: resolvedImage || mbArtist.image,
+      bio: audioDBData?.bio || lastFmData?.bio || mbArtist.bio,
+      website: audioDBData?.website || mbArtist.website,
+      facebook: audioDBData?.facebook || mbArtist.facebook,
+      twitter: audioDBData?.twitter || mbArtist.twitter,
       relatedArtists: relatedArtists,
       ...deezerData,
     };
@@ -114,22 +143,8 @@ export async function getArtistsForGenre(tags: string[], limit: number = 20): Pr
     // Get artists from MusicBrainz
     const mbArtists = await MusicBrainz.searchArtistsByTags(tags, limit);
 
-    // Enhance with additional data (do this selectively to avoid rate limits)
-    const enhancedArtists = await Promise.all(
-      mbArtists.slice(0, 10).map(async (artist) => {
-        const audioDBData = await AudioDB.getArtistByMBID(artist.mbid);
-        return {
-          ...artist,
-          ...audioDBData,
-        };
-      })
-    );
-
-    // Return enhanced artists first, then remaining basic artists
-    return [
-      ...enhancedArtists,
-      ...mbArtists.slice(10),
-    ];
+    // Avoid AudioDB here to prevent rate-limit noise in dev; enrich at route level instead.
+    return mbArtists;
   } catch (error) {
     console.error('[OffDaWallV2] Genre artists aggregation error:', error);
     return [];

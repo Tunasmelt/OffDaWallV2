@@ -10,15 +10,27 @@ interface AudioPlayerProps {
   trackTitle: string;
   artistName: string;
   onEnded?: () => void;
+  isPlaying?: boolean;
+  onPlayPause?: (isPlaying: boolean) => void;
+  autoPlay?: boolean;
 }
 
-export function AudioPlayer({ previewUrl, trackTitle, artistName, onEnded }: AudioPlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
+export function AudioPlayer({
+  previewUrl,
+  trackTitle,
+  artistName,
+  onEnded,
+  isPlaying,
+  onPlayPause,
+  autoPlay,
+}: AudioPlayerProps) {
+  const [internalPlaying, setInternalPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(30);
   const [volume, setVolume] = useState(0.7);
   const [isMuted, setIsMuted] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const playing = isPlaying ?? internalPlaying;
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -27,7 +39,7 @@ export function AudioPlayer({ previewUrl, trackTitle, artistName, onEnded }: Aud
     const updateTime = () => setCurrentTime(audio.currentTime);
     const updateDuration = () => setDuration(audio.duration);
     const handleEnded = () => {
-      setIsPlaying(false);
+      setInternalPlaying(false);
       setCurrentTime(0);
       onEnded?.();
     };
@@ -44,6 +56,30 @@ export function AudioPlayer({ previewUrl, trackTitle, artistName, onEnded }: Aud
   }, [onEnded]);
 
   useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    audio.currentTime = 0;
+    setCurrentTime(0);
+
+    if (autoPlay && isPlaying === undefined) {
+      audio.play().then(() => setInternalPlaying(true)).catch(() => {});
+    }
+  }, [previewUrl, autoPlay, isPlaying]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || isPlaying === undefined) return;
+
+    if (isPlaying) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+    setInternalPlaying(isPlaying);
+  }, [isPlaying]);
+
+  useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume;
     }
@@ -53,16 +89,22 @@ export function AudioPlayer({ previewUrl, trackTitle, artistName, onEnded }: Aud
     const audio = audioRef.current;
     if (!audio) return;
 
-    if (isPlaying) {
-      audio.pause();
-    } else {
+    const nextPlaying = !playing;
+    if (nextPlaying) {
       try {
         await audio.play();
       } catch (error) {
         console.error('[OffDaWallV2] Audio play error:', error);
+        return;
       }
+    } else {
+      audio.pause();
     }
-    setIsPlaying(!isPlaying);
+
+    if (isPlaying === undefined) {
+      setInternalPlaying(nextPlaying);
+    }
+    onPlayPause?.(nextPlaying);
   };
 
   const handleSeek = (value: number[]) => {

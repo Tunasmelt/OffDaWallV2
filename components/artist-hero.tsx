@@ -1,6 +1,8 @@
 'use client';
 
-import Image from 'next/image';
+import { useState } from 'react';
+import { FallbackImage } from '@/components/ui/fallback-image';
+import { useArtistImage } from './hooks/use-artist-image';
 import type { Artist } from '@/lib/types';
 
 interface ArtistHeroProps {
@@ -8,6 +10,19 @@ interface ArtistHeroProps {
 }
 
 export function ArtistHero({ artist }: ArtistHeroProps) {
+  const normalizeUrl = (value?: string) => {
+    if (!value) return null;
+    if (!value.includes('.')) return null;
+    return value.startsWith('http') ? value : `https://${value}`;
+  };
+
+  const websiteUrl = normalizeUrl(artist.website);
+  const facebookUrl = normalizeUrl(artist.facebook);
+  const twitterUrl = normalizeUrl(artist.twitter);
+  const [imageError, setImageError] = useState(false);
+  const resolvedHeroImage = useArtistImage(artist, true, imageError);
+  const heroImage = resolvedHeroImage || artist.imageUrl || artist.image;
+
   return (
     <section className="relative overflow-hidden border-b border-border">
       {/* Background gradient */}
@@ -33,14 +48,19 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
               Artist Profile
             </div>
             
-            <div className="relative aspect-square border-4 border-border bg-card overflow-hidden transform rotate-1 hover:rotate-0 transition-transform duration-300">
-              {artist.image ? (
-                <Image
-                  src={artist.image || "/placeholder.svg"}
+            <div
+              className="relative w-full max-w-[360px] md:max-w-[420px] mx-auto md:mx-0 border-4 border-border bg-card overflow-hidden transform rotate-1 hover:rotate-0 transition-transform duration-300"
+              style={{ aspectRatio: '1 / 1' }}
+            >
+              {heroImage ? (
+                <FallbackImage
+                  src={heroImage || "/placeholder.svg"}
                   alt={artist.name}
                   fill
                   className="object-cover grayscale hover:grayscale-0 transition-all duration-300"
                   sizes="(max-width: 768px) 100vw, 400px"
+                  fallbackSrc="/placeholder.svg"
+                  onError={() => setImageError(true)}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-muted">
@@ -86,13 +106,13 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
                 </div>
               )}
               
-              {artist.lifeSpan?.begin && (
+              {artist.beginDate && (
                 <div className="bg-card border border-border p-4">
                   <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
                     Active Since
                   </div>
                   <div className="text-lg font-bold text-foreground">
-                    {new Date(artist.lifeSpan.begin).getFullYear()}
+                    {new Date(artist.beginDate).getFullYear()}
                   </div>
                 </div>
               )}
@@ -135,11 +155,11 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
             )}
 
             {/* Social Links */}
-            {artist.socialLinks && Object.keys(artist.socialLinks).length > 0 && (
+            {(websiteUrl || facebookUrl || twitterUrl) && (
               <div className="flex flex-wrap gap-3 pt-4">
-                {artist.socialLinks.website && (
+                {websiteUrl && (
                   <a
-                    href={artist.socialLinks.website}
+                    href={websiteUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 text-sm font-medium bg-card border border-border hover:border-primary hover:text-primary transition-colors"
@@ -147,9 +167,9 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
                     Website
                   </a>
                 )}
-                {artist.socialLinks.facebook && (
+                {facebookUrl && (
                   <a
-                    href={artist.socialLinks.facebook}
+                    href={facebookUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 text-sm font-medium bg-card border border-border hover:border-primary hover:text-primary transition-colors"
@@ -157,9 +177,9 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
                     Facebook
                   </a>
                 )}
-                {artist.socialLinks.twitter && (
+                {twitterUrl && (
                   <a
-                    href={artist.socialLinks.twitter}
+                    href={twitterUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-4 py-2 text-sm font-medium bg-card border border-border hover:border-primary hover:text-primary transition-colors"

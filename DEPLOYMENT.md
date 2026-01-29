@@ -47,6 +47,13 @@
 
 ### Vercel Deployment (Recommended)
 
+**Recommended workflow (least tedious):**
+1. Connect the Git repo to Vercel once (Dashboard → New Project).
+2. Set environment variables in Vercel (Preview + Production).
+3. Push to `main` for automatic production deploys.
+4. Use preview branches for testing (Vercel auto-creates preview deployments).
+5. Roll back from the Vercel Dashboard if needed.
+
 1. **Connect Repository**
    ```bash
    # Install Vercel CLI
@@ -63,6 +70,11 @@
    - Go to Vercel Dashboard → Settings → Environment Variables
    - Add `NEXT_PUBLIC_BASE_URL=https://your-domain.vercel.app`
    - Add any optional variables from `.env.example`
+
+   Optional local sync:
+   ```bash
+   vercel env pull .env.local
+   ```
 
 3. **Deploy to Production**
    ```bash

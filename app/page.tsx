@@ -4,9 +4,30 @@ import { GenreCard } from '@/components/genre-card';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
 import { getAllGenres } from '@/lib/genres';
+import { getBaseUrl } from '@/lib/server/base-url';
+import type { Genre } from '@/lib/types';
 
-export default function Page() {
-  const genres = getAllGenres();
+async function getGenrePreviews(): Promise<Genre[]> {
+  try {
+    const baseUrl = getBaseUrl();
+    const res = await fetch(`${baseUrl}/api/genres?preview=1`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) {
+      return getAllGenres();
+    }
+    const payload = await res.json();
+    if (payload?.ok === true && Array.isArray(payload?.data?.genres)) {
+      return payload.data.genres;
+    }
+    return getAllGenres();
+  } catch {
+    return getAllGenres();
+  }
+}
+
+export default async function Page() {
+  const genres = await getGenrePreviews();
 
   return (
     <main className="min-h-screen bg-background">
@@ -16,7 +37,7 @@ export default function Page() {
           <div className="flex items-center justify-between gap-4">
             <Link href="/">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={240}
                 height={80}
@@ -113,9 +134,15 @@ export default function Page() {
 
         {/* Genre Grid with Collage Layout */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 md:gap-12">
-          {genres.map((genre, index) => (
-            <GenreCard key={genre.slug} genre={genre} index={index} />
-          ))}
+          {genres.map((genre, index) => {
+            return (
+              <GenreCard
+                key={genre.slug}
+                genre={genre}
+                index={index}
+              />
+            );
+          })}
         </div>
       </section>
 
@@ -166,7 +193,7 @@ export default function Page() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={120}
                 height={40}

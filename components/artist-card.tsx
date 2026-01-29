@@ -1,47 +1,55 @@
 'use client';
 
-import Link from "next/link"
 import PrefetchLink from './prefetch-link'; // Ensure PrefetchLink is imported
-import Image from 'next/image';
+import { useState } from 'react';
+import { FallbackImage } from '@/components/ui/fallback-image';
+import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 import type { Artist } from '@/lib/types';
+import { useArtistImage } from './hooks/use-artist-image';
 
 interface ArtistCardProps {
   artist: Artist;
   index: number;
   featured?: boolean;
+  fallbackImageUrl?: string | null;
 }
 
-export function ArtistCard({ artist, index, featured = false }: ArtistCardProps) {
+export function ArtistCard({ artist, index, featured = false, fallbackImageUrl }: ArtistCardProps) {
   // Rotation for collage effect
   const rotation = index % 3 === 0 ? -2 : index % 3 === 1 ? 1 : -1;
+  const [imageError, setImageError] = useState(false);
+  const imageUrl = useArtistImage(artist, true, imageError);
+  const imageSrc = imageUrl || artist.image || fallbackImageUrl || "/placeholder-user.jpg";
+  const hasArtistLink = Boolean(artist.mbid);
   
-  return (
-    <Link href={`/artists/${artist.mbid}`}>
-      <PrefetchLink href={`/artists/${artist.mbid}`}>
-        <article
-          className="group relative bg-card border border-border overflow-hidden transition-all duration-300 hover:border-primary hover:shadow-xl"
-          style={{
-            transform: `rotate(${rotation}deg)`,
-          }}
-        >
+  const card = (
+      <article
+        className="group relative bg-card border border-border overflow-hidden transition-all duration-300 hover:border-primary hover:shadow-xl"
+        style={{
+          transform: `rotate(${rotation}deg)`,
+        }}
+      >
           {/* Artist Image */}
           <div className="aspect-square relative overflow-hidden bg-muted">
-            {artist.imageUrl ? (
-              <Image
-                src={artist.imageUrl || "/placeholder.svg"}
+            {imageSrc ? (
+              <FallbackImage
+                src={imageSrc}
                 alt={artist.name}
                 fill
                 className="object-cover transition-all duration-500 group-hover:scale-110"
                 style={{
                   filter: 'grayscale(100%)',
                 }}
+                sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                fallbackSrc={fallbackImageUrl || "/placeholder-user.jpg"}
+                onError={() => setImageError(true)}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-muted to-background">
-                <div className="text-6xl font-black text-muted-foreground/20">
-                  {artist.name.charAt(0)}
-                </div>
-              </div>
+              <ImagePlaceholder
+                label={artist.name}
+                className="bg-gradient-to-br from-muted to-background"
+                textClassName="text-6xl"
+              />
             )}
             
             {/* Overlay on hover */}
@@ -91,8 +99,20 @@ export function ArtistCard({ artist, index, featured = false }: ArtistCardProps)
               background: 'repeating-linear-gradient(90deg, transparent, transparent 2px, oklch(var(--primary)) 2px, oklch(var(--primary)) 4px)',
             }}
           />
-        </article>
-      </PrefetchLink>
-    </Link>
+      </article>
+  );
+
+  if (!hasArtistLink) {
+    return (
+      <div className="cursor-default" aria-label={artist.name}>
+        {card}
+      </div>
+    );
+  }
+
+  return (
+    <PrefetchLink href={`/artists/${artist.mbid}`}>
+      {card}
+    </PrefetchLink>
   );
 }

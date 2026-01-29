@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { Genre } from '@/lib/types';
+import { normalizeImageUrl } from '@/lib/images';
+import { FallbackImage } from '@/components/ui/fallback-image';
+import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 
 interface GenreCardProps {
   genre: Genre;
@@ -11,6 +14,14 @@ interface GenreCardProps {
 
 export function GenreCard({ genre, index }: GenreCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const previewUrl =
+    normalizeImageUrl(
+      genre.previewImageUrl ||
+        genre.previewArtists?.[0]?.image ||
+        genre.previewArtists?.[0]?.imageUrl
+    ) || null;
+  const [imageFailed, setImageFailed] = useState(false);
+  const transparentFallback = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
   
   // Stagger rotation angles for collage effect
   const rotations = [-2, 1, -1, 2, -3, 1, -2, 3, -1, 2];
@@ -44,6 +55,22 @@ export function GenreCard({ genre, index }: GenreCardProps) {
         
         {/* Placeholder image with grayscale filter */}
         <div className="aspect-square bg-gradient-to-br from-muted to-card relative overflow-hidden">
+          {previewUrl && !imageFailed && (
+            <FallbackImage
+              src={previewUrl}
+              alt={`${genre.name} artist preview`}
+              fill
+              className="object-cover grayscale"
+              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 25vw"
+              fallbackSrc={transparentFallback}
+              onError={() => setImageFailed(true)}
+            />
+          )}
+          {!previewUrl || imageFailed ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <ImagePlaceholder label={genre.name} textClassName="text-6xl" className="bg-transparent border-none" />
+            </div>
+          ) : null}
           <div className="absolute inset-0 bg-gradient-to-br from-black/60 to-transparent z-10" />
           <div 
             className="absolute inset-0 opacity-30"
@@ -75,10 +102,10 @@ export function GenreCard({ genre, index }: GenreCardProps) {
         
         {/* Handwritten-style label */}
         <div 
-          className="absolute -top-3 -right-3 bg-primary text-primary-foreground px-3 py-1 text-xs font-bold uppercase tracking-wide transform rotate-12 shadow-lg"
+          className="absolute top-2 right-2 bg-primary text-primary-foreground px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide transform rotate-6 shadow-lg"
           style={{
             fontFamily: 'system-ui, -apple-system, sans-serif',
-            letterSpacing: '0.1em',
+            letterSpacing: '0.08em',
           }}
         >
           Explore

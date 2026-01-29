@@ -36,7 +36,7 @@ export function MobileMenu() {
           <div className="absolute inset-y-0 right-0 w-full max-w-sm bg-card border-l border-border overflow-y-auto">
             <div className="sticky top-0 bg-card border-b border-border p-4 flex items-center justify-between z-10">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={120}
                 height={40}

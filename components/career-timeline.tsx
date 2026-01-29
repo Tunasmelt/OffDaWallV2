@@ -7,15 +7,15 @@ interface CareerTimelineProps {
 }
 
 export function CareerTimeline({ artist }: CareerTimelineProps) {
-  if (!artist.lifeSpan?.begin) {
+  if (!artist.beginDate) {
     return null;
   }
 
-  const startYear = new Date(artist.lifeSpan.begin).getFullYear();
-  const endYear = artist.lifeSpan.end ? new Date(artist.lifeSpan.end).getFullYear() : new Date().getFullYear();
+  const startYear = new Date(artist.beginDate).getFullYear();
+  const endYear = artist.endDate ? new Date(artist.endDate).getFullYear() : new Date().getFullYear();
   const yearsActive = endYear - startYear;
   const currentYear = new Date().getFullYear();
-  const isActive = !artist.lifeSpan.end || endYear >= currentYear - 1;
+  const isActive = !artist.endDate || endYear >= currentYear - 1;
 
   return (
     <section className="container mx-auto px-4 py-12 md:py-16 border-t border-border">

@@ -56,21 +56,26 @@ export function generateSEOMetadata({
   };
 }
 
-export function generateArtistMetadata(artistName: string, bio?: string, image?: string): Metadata {
+export function generateArtistMetadata(
+  artistName: string,
+  bio?: string,
+  image?: string,
+  mbid?: string
+): Metadata {
   return generateSEOMetadata({
     title: artistName,
     description: bio 
       ? `${bio.slice(0, 155)}...`
       : `Explore ${artistName}'s complete discography, biography, and related artists on OffDaWall.`,
-    path: `/artists/${artistName.toLowerCase().replace(/\s+/g, '-')}`,
+    path: mbid ? `/artists/${mbid}` : `/artists/${artistName.toLowerCase().replace(/\s+/g, '-')}`,
     image,
   });
 }
 
-export function generateGenreMetadata(genreName: string, description: string): Metadata {
+export function generateGenreMetadata(genreName: string, description: string, slug?: string): Metadata {
   return generateSEOMetadata({
     title: `${genreName} Artists`,
     description: `${description} Discover top and upcoming ${genreName} artists.`,
-    path: `/genres/${genreName.toLowerCase().replace(/\s+/g, '-')}`,
+    path: slug ? `/genres/${slug}` : `/genres/${genreName.toLowerCase().replace(/\s+/g, '-')}`,
   });
 }

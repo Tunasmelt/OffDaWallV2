@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlbumCard } from './album-card';
 import type { Album } from '@/lib/types';
+import { fetchJsonCached } from '@/lib/client/fetch-json';
 
 interface ArtistCatalogProps {
   artistMbid: string;
@@ -17,32 +18,64 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'album' | 'ep' | 'single'>('all');
+  const [mode, setMode] = useState<'preview' | 'deep-dive'>('preview');
+  const [retryCount, setRetryCount] = useState(0);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchCatalog() {
+    const controller = new AbortController();
+    let active = true;
+
+    async function fetchCatalog(attempt: number, refresh = false) {
       try {
         setLoading(true);
         setError(null);
-        
-        const response = await fetch(`/api/artists/${artistMbid}/catalog`);
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch catalog');
+        const url = `/api/artists/${artistMbid}/catalog?mode=${mode}${refresh ? '&refresh=1' : ''}`;
+        const cacheKey = `catalog:${artistMbid}:${mode}:${refresh ? 'refresh' : 'base'}`;
+        const data = await fetchJsonCached<{ albums?: (Album & { tracks?: any[] })[] }>(url, {
+          cacheKey,
+          ttlMs: mode === 'deep-dive' ? 5 * 60_000 : 60_000,
+          signal: controller.signal,
+          shouldCache: (payload) => Array.isArray(payload?.albums) && payload.albums.length > 0,
+          timeoutMs: mode === 'deep-dive' ? 30_000 : 20_000,
+          retryCount: 1,
+          retryDelayMs: 500,
+        });
+        if (!active) return;
+        const nextAlbums = data.albums || [];
+        setInfoMessage((data as any)?.message || null);
+        if (nextAlbums.length === 0 && attempt === 0 && mode === 'preview') {
+          setRetryCount(1);
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          if (active) {
+            await fetchCatalog(1, true);
+          }
+          return;
         }
-
-        const data = await response.json();
-        console.log('[OffDaWallV2] Catalog loaded:', data.albums.length, 'albums');
-        setAlbums(data.albums || []);
+        console.log('[OffDaWallV2] Catalog loaded:', nextAlbums.length, 'albums');
+        setAlbums(nextAlbums);
       } catch (err) {
+        if ((err as Error)?.name === 'AbortError') {
+          return;
+        }
         console.error('[OffDaWallV2] Catalog fetch error:', err);
-        setError('Failed to load catalog');
+        if (active) {
+          setError('Failed to load catalog');
+          setInfoMessage(null);
+        }
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
-    fetchCatalog();
-  }, [artistMbid]);
+    fetchCatalog(0);
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [artistMbid, mode]);
 
   const filteredAlbums = filter === 'all' 
     ? albums 
@@ -62,7 +95,9 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
     return (
       <div className="py-12 flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">Loading catalog...</p>
+        <p className="text-sm text-muted-foreground">
+          {retryCount > 0 ? 'Retrying catalog fetch...' : 'Loading catalog...'}
+        </p>
       </div>
     );
   }
@@ -82,7 +117,9 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
     return (
       <div className="py-12 text-center">
         <Disc className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-        <p className="text-muted-foreground">No releases found for {artistName}</p>
+        <p className="text-muted-foreground">
+          {infoMessage || `No releases found for ${artistName}`}
+        </p>
       </div>
     );
   }
@@ -101,6 +138,30 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
         <p className="text-muted-foreground mt-2">
           {albums.length} releases • {albumCount} albums • {epCount} EPs • {singleCount} singles
         </p>
+        {infoMessage && (
+          <p className="text-sm text-muted-foreground mt-2">{infoMessage}</p>
+        )}
+      </div>
+
+      {/* Mode Toggle */}
+      <div className="flex flex-wrap gap-3 border-b border-border pb-6">
+        {(['preview', 'deep-dive'] as const).map((option) => (
+          <button
+            key={option}
+            onClick={() => setMode(option)}
+            disabled={loading}
+            className={`
+              px-4 py-2 font-bold uppercase text-sm tracking-wider border-2 transition-all
+              ${mode === option
+                ? 'bg-primary text-primary-foreground border-primary transform -rotate-1'
+                : 'bg-card text-foreground border-border hover:border-primary hover:text-primary'
+              }
+              disabled:opacity-50 disabled:cursor-not-allowed
+            `}
+          >
+            {option === 'preview' ? 'Preview' : 'Deep-Dive'}
+          </button>
+        ))}
       </div>
 
       {/* Filter Tabs */}

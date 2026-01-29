@@ -8,8 +8,10 @@ import { Search, X, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import Image from 'next/image';
 import type { Artist } from '@/lib/types';
+import { useArtistImage } from './hooks/use-artist-image';
+import { FallbackImage } from '@/components/ui/fallback-image';
+import { fetchJsonCached } from '@/lib/client/fetch-json';
 
 export function SearchBar() {
   const router = useRouter();
@@ -19,6 +21,7 @@ export function SearchBar() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout>();
+  const abortRef = useRef<AbortController | null>(null);
 
   // Debounced search for autocomplete
   const fetchSuggestions = useCallback(async (searchQuery: string) => {
@@ -27,12 +30,27 @@ export function SearchBar() {
       return;
     }
 
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
-      const data = await response.json();
+      const data = await fetchJsonCached<{ results?: Artist[] }>(
+        `/api/search?q=${encodeURIComponent(searchQuery)}`,
+        {
+          cacheKey: `search-suggest:${searchQuery}`,
+          ttlMs: 15_000,
+          signal: controller.signal,
+        }
+      );
       setSuggestions(data.results?.slice(0, 5) || []);
     } catch (error) {
+      if ((error as Error)?.name === 'AbortError') {
+        return;
+      }
       console.error('[OffDaWallV2] Autocomplete error:', error);
       setSuggestions([]);
     } finally {
@@ -79,7 +97,12 @@ export function SearchBar() {
     };
 
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+    };
   }, []);
 
   // Keyboard shortcut (Cmd+K / Ctrl+K)
@@ -129,34 +152,14 @@ export function SearchBar() {
         <div className="absolute top-full mt-2 w-full bg-card border border-border rounded shadow-lg z-50 overflow-hidden">
           <div className="p-2 space-y-1">
             {suggestions.map((artist) => (
-              <Link
+              <SuggestionItem
                 key={artist.mbid}
-                href={`/artists/${artist.mbid}`}
-                onClick={() => {
+                artist={artist}
+                onSelect={() => {
                   setShowSuggestions(false);
                   setQuery('');
                 }}
-                className="flex items-center gap-3 p-2 rounded hover:bg-muted transition-colors"
-              >
-                {artist.image && (
-                  <div className="relative w-10 h-10 rounded overflow-hidden flex-shrink-0 grayscale">
-                    <Image
-                      src={artist.image || "/placeholder.svg"}
-                      alt={artist.name}
-                      fill
-                      className="object-cover"
-                    />
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{artist.name}</div>
-                  {artist.genres && artist.genres.length > 0 && (
-                    <div className="text-xs text-muted-foreground truncate">
-                      {artist.genres.slice(0, 2).join(', ')}
-                    </div>
-                  )}
-                </div>
-              </Link>
+              />
             ))}
           </div>
           <div className="border-t border-border p-2">
@@ -171,6 +174,45 @@ export function SearchBar() {
         </div>
       )}
     </div>
+  );
+}
+
+function SuggestionItem({
+  artist,
+  onSelect,
+}: {
+  artist: Artist;
+  onSelect: () => void;
+}) {
+  const imageUrl = useArtistImage(artist, true);
+  const resolvedImage = imageUrl || artist.imageUrl || artist.image;
+
+  return (
+    <Link
+      href={`/artists/${artist.mbid}`}
+      onClick={onSelect}
+      className="flex items-center gap-3 p-2 rounded hover:bg-muted transition-colors"
+    >
+      {resolvedImage && (
+        <div className="relative w-10 h-10 rounded overflow-hidden flex-shrink-0 grayscale">
+          <FallbackImage
+            src={resolvedImage || "/placeholder.svg"}
+            alt={artist.name}
+            fill
+            className="object-cover"
+            fallbackSrc="/placeholder.svg"
+          />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-sm truncate">{artist.name}</div>
+        {artist.genres && artist.genres.length > 0 && (
+          <div className="text-xs text-muted-foreground truncate">
+            {artist.genres.slice(0, 2).join(', ')}
+          </div>
+        )}
+      </div>
+    </Link>
   );
 }
 

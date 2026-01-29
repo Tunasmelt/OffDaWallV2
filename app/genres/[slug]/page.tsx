@@ -7,28 +7,37 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
 import { generateGenreMetadata } from '@/lib/metadata';
+import { getBaseUrl } from '@/lib/server/base-url';
 import type { Artist } from '@/lib/types';
+import { resolveArtistImage } from '@/lib/images';
+
+export const dynamic = 'force-dynamic';
 
 async function getGenreData(slug: string) {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+    const baseUrl = getBaseUrl();
     const response = await fetch(`${baseUrl}/api/genres/${slug}`, {
-      next: { revalidate: 86400 }, // Revalidate every 24 hours
+      next: { revalidate: 3600 },
     });
     
     if (!response.ok) {
       return null;
     }
     
-    return response.json();
+    const payload = await response.json();
+    if (payload?.ok === true) {
+      return payload.data;
+    }
+    return null;
   } catch (error) {
     console.error('[OffDaWallV2] Failed to fetch genre data:', error);
     return null;
   }
 }
 
-export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const genre = getGenreBySlug(params.slug);
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const genre = getGenreBySlug(slug);
   
   if (!genre) {
     return {
@@ -36,11 +45,11 @@ export async function generateMetadata({ params }: { params: { slug: string } })
     };
   }
   
-  return generateGenreMetadata(genre.name, genre.description);
+  return generateGenreMetadata(genre.name, genre.description, genre.slug);
 }
 
-export default async function GenrePage({ params }: { params: { slug: string } }) {
-  const { slug } = params;
+export default async function GenrePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   
   const genre = getGenreBySlug(slug);
   
@@ -53,6 +62,10 @@ export default async function GenrePage({ params }: { params: { slug: string } }
   const topArtists: Artist[] = data?.topArtists || [];
   const upcomingArtists: Artist[] = data?.upcomingArtists || [];
   const totalCount = data?.totalCount || 0;
+  const genreFallbackImage =
+    [...topArtists, ...upcomingArtists]
+      .map((artist) => resolveArtistImage(artist.imageUrl, artist.image))
+      .find(Boolean) || null;
   
   return (
     <main className="min-h-screen bg-background">
@@ -62,7 +75,7 @@ export default async function GenrePage({ params }: { params: { slug: string } }
           <div className="flex items-center justify-between gap-4">
             <Link href="/">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={180}
                 height={60}
@@ -159,6 +172,7 @@ export default async function GenrePage({ params }: { params: { slug: string } }
                 artist={artist}
                 index={index}
                 featured={index < 3}
+                fallbackImageUrl={genreFallbackImage}
               />
             ))}
           </div>
@@ -191,6 +205,7 @@ export default async function GenrePage({ params }: { params: { slug: string } }
                 key={artist.mbid}
                 artist={artist}
                 index={index}
+                fallbackImageUrl={genreFallbackImage}
               />
             ))}
           </div>
@@ -223,7 +238,7 @@ export default async function GenrePage({ params }: { params: { slug: string } }
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <Link href="/">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={120}
                 height={40}

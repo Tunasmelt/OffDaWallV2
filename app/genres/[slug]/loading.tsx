@@ -11,7 +11,7 @@ export default function Loading() {
           <div className="flex items-center justify-between">
             <Link href="/">
               <Image
-                src="/logo-transparent.png"
+                src="/logo-transparent-v2.png"
                 alt="OffDaWall"
                 width={180}
                 height={60}

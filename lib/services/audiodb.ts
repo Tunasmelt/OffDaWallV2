@@ -1,19 +1,20 @@
 import type { Artist, AudioDBArtist } from '../types';
+import { normalizeImageUrl } from '../images';
 import { cache, CACHE_TTL } from '../cache';
 import { audioDBLimiter } from '../rate-limiter';
+import { fetchJson } from './http';
 
 const AUDIODB_API = 'https://www.theaudiodb.com/api/v1/json/2';
 
 async function fetchAudioDB(endpoint: string): Promise<any> {
   await audioDBLimiter.waitForSlot();
-
-  const response = await fetch(`${AUDIODB_API}${endpoint}`);
-
-  if (!response.ok) {
-    throw new Error(`AudioDB API error: ${response.status} ${response.statusText}`);
-  }
-
-  return response.json();
+  return fetchJson(`${AUDIODB_API}${endpoint}`, {}, {
+    timeoutMs: 4500,
+    retries: 1,
+    headers: {
+      Accept: 'application/json',
+    },
+  });
 }
 
 export async function getArtistByMBID(mbid: string): Promise<Partial<Artist> | null> {
@@ -34,7 +35,7 @@ export async function getArtistByMBID(mbid: string): Promise<Partial<Artist> | n
     const adb: AudioDBArtist = data.artists[0];
 
     const artistData: Partial<Artist> = {
-      imageUrl: adb.strArtistThumb || adb.strArtistBanner,
+      imageUrl: normalizeImageUrl(adb.strArtistThumb || adb.strArtistBanner),
       bio: adb.strBiographyEN,
       website: adb.strWebsite,
       facebook: adb.strFacebook,
@@ -44,7 +45,9 @@ export async function getArtistByMBID(mbid: string): Promise<Partial<Artist> | n
     cache.set(cacheKey, artistData, CACHE_TTL.IMAGES);
     return artistData;
   } catch (error) {
-    console.error('[OffDaWallV2] AudioDB fetch error:', error);
+    if (!(error instanceof Error && error.message.includes('Rate limiter wait exceeded'))) {
+      console.error('[OffDaWallV2] AudioDB fetch error:', error);
+    }
     return null;
   }
 }
@@ -67,7 +70,7 @@ export async function searchArtistByName(name: string): Promise<Partial<Artist> 
     const adb: AudioDBArtist = data.artists[0];
 
     const artistData: Partial<Artist> = {
-      imageUrl: adb.strArtistThumb || adb.strArtistBanner,
+      imageUrl: normalizeImageUrl(adb.strArtistThumb || adb.strArtistBanner),
       bio: adb.strBiographyEN,
       website: adb.strWebsite,
       facebook: adb.strFacebook,
@@ -77,7 +80,9 @@ export async function searchArtistByName(name: string): Promise<Partial<Artist> 
     cache.set(cacheKey, artistData, CACHE_TTL.IMAGES);
     return artistData;
   } catch (error) {
-    console.error('[OffDaWallV2] AudioDB search error:', error);
+    if (!(error instanceof Error && error.message.includes('Rate limiter wait exceeded'))) {
+      console.error('[OffDaWallV2] AudioDB search error:', error);
+    }
     return null;
   }
 }
