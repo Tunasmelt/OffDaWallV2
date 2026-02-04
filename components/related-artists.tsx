@@ -6,6 +6,7 @@ import type { RelatedArtist } from '@/lib/types';
 import { useArtistImage } from './hooks/use-artist-image';
 import { FallbackImage } from '@/components/ui/fallback-image';
 import { ImagePlaceholder } from '@/components/ui/image-placeholder';
+import { isValidUuid } from '@/lib/ids';
 
 interface RelatedArtistsProps {
   relatedArtists: RelatedArtist[];
@@ -81,7 +82,7 @@ function RelatedArtistCard({
 
   const imageUrl = useArtistImage(relatedArtist, isVisible, imageError);
   const finalImage = imageUrl || relatedArtist.imageUrl || relatedArtist.image;
-  const hasArtistLink = Boolean(relatedArtist.mbid);
+  const hasArtistLink = isValidUuid(relatedArtist.mbid || '');
 
   const card = (
     <div ref={cardRef}>

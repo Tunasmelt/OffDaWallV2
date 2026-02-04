@@ -1,26 +1,23 @@
 import type { Artist, Album, MusicBrainzArtist, MusicBrainzRelease } from '../types';
 import { cache, CACHE_TTL } from '../cache';
-import { musicBrainzLimiter } from '../rate-limiter';
-import { fetchJson } from './http';
+import { providerFetchJson } from '../providers/provider-fetch';
 
 const MUSICBRAINZ_API = 'https://musicbrainz.org/ws/2';
 const USER_AGENT = 'OffDaWall/1.0.0 (https://offdawall.app)';
 
 async function fetchMusicBrainz(endpoint: string): Promise<any> {
-  await musicBrainzLimiter.waitForSlot();
-
-  return fetchJson(
+  const { data } = await providerFetchJson(
+    'musicbrainz',
     `${MUSICBRAINZ_API}${endpoint}`,
-    {},
     {
-      timeoutMs: 5000,
-      retries: 1,
+      timeoutMs: 8000,
       headers: {
         'User-Agent': USER_AGENT,
         'Accept': 'application/json',
       },
     }
   );
+  return data;
 }
 
 export async function searchArtists(query: string, genreFilter?: string[], limit: number = 50): Promise<Artist[]> {
@@ -134,9 +131,13 @@ export async function getArtistById(mbid: string): Promise<Artist | null> {
 
     cache.set(cacheKey, artist, CACHE_TTL.ARTIST_DATA);
     return artist;
-  } catch (error) {
+  } catch (error: any) {
+    const message = String(error?.message || '');
+    if (message.includes('HTTP 404')) {
+      return null;
+    }
     console.error('[OffDaWallV2] MusicBrainz artist fetch error:', error);
-    return null;
+    throw error;
   }
 }
 

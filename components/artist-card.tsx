@@ -1,11 +1,12 @@
 'use client';
 
 import PrefetchLink from './prefetch-link'; // Ensure PrefetchLink is imported
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FallbackImage } from '@/components/ui/fallback-image';
 import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 import type { Artist } from '@/lib/types';
 import { useArtistImage } from './hooks/use-artist-image';
+import { isValidUuid } from '@/lib/ids';
 
 interface ArtistCardProps {
   artist: Artist;
@@ -17,13 +18,37 @@ interface ArtistCardProps {
 export function ArtistCard({ artist, index, featured = false, fallbackImageUrl }: ArtistCardProps) {
   // Rotation for collage effect
   const rotation = index % 3 === 0 ? -2 : index % 3 === 1 ? 1 : -1;
+  const cardRef = useRef<HTMLElement | null>(null);
+  const [isVisible, setIsVisible] = useState(index < 8);
   const [imageError, setImageError] = useState(false);
-  const imageUrl = useArtistImage(artist, true, imageError);
+  const imageUrl = useArtistImage(artist, isVisible, imageError);
   const imageSrc = imageUrl || artist.image || fallbackImageUrl || "/placeholder-user.jpg";
-  const hasArtistLink = Boolean(artist.mbid);
+  const hasArtistLink = isValidUuid(artist.mbid || '');
+
+  useEffect(() => {
+    if (index < 8) return;
+    const element = cardRef.current;
+    if (!element) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsVisible(true);
+            observer.disconnect();
+          }
+        });
+      },
+      { rootMargin: '180px' }
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [index]);
   
   const card = (
       <article
+        ref={cardRef}
         className="group relative bg-card border border-border overflow-hidden transition-all duration-300 hover:border-primary hover:shadow-xl"
         style={{
           transform: `rotate(${rotation}deg)`,

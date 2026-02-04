@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { Genre } from '@/lib/types';
-import { normalizeImageUrl } from '@/lib/images';
+import { normalizeImageUrl, toImageProxyUrl } from '@/lib/images';
 import { FallbackImage } from '@/components/ui/fallback-image';
 import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 
@@ -15,11 +15,19 @@ interface GenreCardProps {
 export function GenreCard({ genre, index }: GenreCardProps) {
   const [isHovered, setIsHovered] = useState(false);
   const previewUrl =
+    toImageProxyUrl(
+      normalizeImageUrl(
+        genre.previewImageUrl ||
+          genre.previewArtists?.[0]?.image ||
+          genre.previewArtists?.[0]?.imageUrl
+      )
+    ) ||
     normalizeImageUrl(
       genre.previewImageUrl ||
         genre.previewArtists?.[0]?.image ||
         genre.previewArtists?.[0]?.imageUrl
-    ) || null;
+    ) ||
+    null;
   const [imageFailed, setImageFailed] = useState(false);
   const transparentFallback = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
   

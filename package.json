@@ -2,11 +2,18 @@
   "name": "ODWv2",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <25"
+  },
   "scripts": {
     "build": "next build",
+    "check:node": "node scripts/check-node.mjs",
     "check:env": "node scripts/check-env.mjs",
     "dev": "next dev",
     "lint": "eslint .",
+    "smoke:api": "node scripts/smoke-api.mjs",
+    "typecheck": "tsc --noEmit",
+    "verify:release": "npm run check:node && npm run check:env && npm run typecheck && npm run build",
     "start": "next start"
   },
   "dependencies": {
@@ -63,7 +70,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.9",
-    "@types/node": "^22",
+    "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "postcss": "^8.5",

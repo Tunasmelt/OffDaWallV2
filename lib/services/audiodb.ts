@@ -1,20 +1,18 @@
 import type { Artist, AudioDBArtist } from '../types';
 import { normalizeImageUrl } from '../images';
 import { cache, CACHE_TTL } from '../cache';
-import { audioDBLimiter } from '../rate-limiter';
-import { fetchJson } from './http';
+import { providerFetchJson } from '../providers/provider-fetch';
 
 const AUDIODB_API = 'https://www.theaudiodb.com/api/v1/json/2';
 
 async function fetchAudioDB(endpoint: string): Promise<any> {
-  await audioDBLimiter.waitForSlot();
-  return fetchJson(`${AUDIODB_API}${endpoint}`, {}, {
+  const { data } = await providerFetchJson('audiodb', `${AUDIODB_API}${endpoint}`, {
     timeoutMs: 4500,
-    retries: 1,
     headers: {
       Accept: 'application/json',
     },
   });
+  return data;
 }
 
 export async function getArtistByMBID(mbid: string): Promise<Partial<Artist> | null> {
@@ -45,9 +43,7 @@ export async function getArtistByMBID(mbid: string): Promise<Partial<Artist> | n
     cache.set(cacheKey, artistData, CACHE_TTL.IMAGES);
     return artistData;
   } catch (error) {
-    if (!(error instanceof Error && error.message.includes('Rate limiter wait exceeded'))) {
-      console.error('[OffDaWallV2] AudioDB fetch error:', error);
-    }
+    console.error('[OffDaWallV2] AudioDB fetch error:', error);
     return null;
   }
 }
@@ -80,9 +76,7 @@ export async function searchArtistByName(name: string): Promise<Partial<Artist> 
     cache.set(cacheKey, artistData, CACHE_TTL.IMAGES);
     return artistData;
   } catch (error) {
-    if (!(error instanceof Error && error.message.includes('Rate limiter wait exceeded'))) {
-      console.error('[OffDaWallV2] AudioDB search error:', error);
-    }
+    console.error('[OffDaWallV2] AudioDB search error:', error);
     return null;
   }
 }

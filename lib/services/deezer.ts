@@ -1,34 +1,18 @@
 import type { Track, DeezerArtist, DeezerTrack } from '../types';
 import { cache, CACHE_TTL } from '../cache';
-import { deezerLimiter } from '../rate-limiter';
 import { normalizeImageUrl } from '../images';
-import { fetchJson } from './http';
+import { providerFetchJson } from '../providers/provider-fetch';
 
 const DEEZER_API = 'https://api.deezer.com';
-const RATE_LIMIT_COOLDOWN_MS = 30_000;
-let cooldownUntil = 0;
 
 async function fetchDeezer(endpoint: string): Promise<any | null> {
-  if (Date.now() < cooldownUntil) {
-    return null;
-  }
-  try {
-    await deezerLimiter.waitForSlot();
-  } catch (error) {
-    if (`${error}`.includes('Rate limiter wait exceeded')) {
-      cooldownUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
-      return null;
-    }
-    throw error;
-  }
-
-  return fetchJson(`${DEEZER_API}${endpoint}`, {}, {
+  const { data } = await providerFetchJson('deezer', `${DEEZER_API}${endpoint}`, {
     timeoutMs: 4500,
-    retries: 1,
     headers: {
       Accept: 'application/json',
     },
   });
+  return data;
 }
 
 export async function searchArtist(name: string): Promise<DeezerArtist | null> {

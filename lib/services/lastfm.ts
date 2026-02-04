@@ -1,6 +1,6 @@
 import type { Track } from '../types';
 import { normalizeImageUrl } from '../images';
-import { fetchJson } from './http';
+import { providerFetchJson } from '../providers/provider-fetch';
 
 const LASTFM_API = 'https://ws.audioscrobbler.com/2.0/';
 
@@ -18,13 +18,13 @@ async function fetchLastFm(params: Record<string, string>): Promise<any> {
     ...params,
   });
 
-  return fetchJson(`${LASTFM_API}?${searchParams.toString()}`, {}, {
+  const { data } = await providerFetchJson('lastfm', `${LASTFM_API}?${searchParams.toString()}`, {
     timeoutMs: 4500,
-    retries: 1,
     headers: {
       Accept: 'application/json',
     },
   });
+  return data;
 }
 
 export async function getAlbumInfoByMbid(mbid: string) {

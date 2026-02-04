@@ -64,6 +64,8 @@ export const HIPHOP_GENRES: Genre[] = [
   },
 ];
 
+export const TAXONOMY_CACHE_TAG = 'genres:taxonomy';
+
 export function getGenreBySlug(slug: string): Genre | undefined {
   return HIPHOP_GENRES.find(genre => genre.slug === slug);
 }

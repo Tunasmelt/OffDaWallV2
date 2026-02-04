@@ -6,33 +6,51 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlbumCard } from './album-card';
 import type { Album } from '@/lib/types';
-import { fetchJsonCached } from '@/lib/client/fetch-json';
+import type { ArtistCatalogDTO } from '@/lib/contracts/api';
+import { apiFetchWithMeta } from '@/lib/client/api-fetch';
 
 interface ArtistCatalogProps {
   artistMbid: string;
   artistName: string;
+  initialData?: ArtistCatalogDTO;
 }
 
-export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
-  const [albums, setAlbums] = useState<(Album & { tracks?: any[] })[]>([]);
-  const [loading, setLoading] = useState(true);
+type CatalogAlbum = Album & { tracks?: any[] };
+
+function toCatalogAlbums(albums?: ArtistCatalogDTO['albums']): CatalogAlbum[] {
+  if (!Array.isArray(albums)) return [];
+  return albums.map((album) => ({
+    ...album,
+    coverArtUrl: album.coverArtUrl ?? undefined,
+  })) as CatalogAlbum[];
+}
+
+export function ArtistCatalog({ artistMbid, artistName, initialData }: ArtistCatalogProps) {
+  const [albums, setAlbums] = useState<CatalogAlbum[]>(toCatalogAlbums(initialData?.albums));
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'album' | 'ep' | 'single'>('all');
-  const [mode, setMode] = useState<'preview' | 'deep-dive'>('preview');
+  const [mode, setMode] = useState<'preview' | 'deep-dive'>(initialData?.mode || 'preview');
   const [retryCount, setRetryCount] = useState(0);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [metaStatus, setMetaStatus] = useState<string | null>(null);
+  const [emptyReason, setEmptyReason] = useState<string | null>(initialData?.emptyReason || null);
+
+  const isTransientEmptyReason = (reason?: string) =>
+    reason === 'rate_limited' || reason === 'mb_failed' || reason === 'provider_timeout';
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
 
     async function fetchCatalog(attempt: number, refresh = false) {
+      let shouldFinalize = true;
       try {
         setLoading(true);
         setError(null);
         const url = `/api/artists/${artistMbid}/catalog?mode=${mode}${refresh ? '&refresh=1' : ''}`;
         const cacheKey = `catalog:${artistMbid}:${mode}:${refresh ? 'refresh' : 'base'}`;
-        const data = await fetchJsonCached<{ albums?: (Album & { tracks?: any[] })[] }>(url, {
+        const result = await apiFetchWithMeta<ArtistCatalogDTO>(url, {
           cacheKey,
           ttlMs: mode === 'deep-dive' ? 5 * 60_000 : 60_000,
           signal: controller.signal,
@@ -42,8 +60,31 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
           retryDelayMs: 500,
         });
         if (!active) return;
-        const nextAlbums = data.albums || [];
+        const data = result.data;
+        const currentStatus = result.meta?.status as string | undefined;
+        setMetaStatus(currentStatus || null);
+        if (currentStatus === 'rate_limited' && attempt < 2) {
+          shouldFinalize = false;
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (active) {
+            await fetchCatalog(attempt + 1, true);
+          }
+          return;
+        }
+        const nextAlbums = toCatalogAlbums(data.albums);
         setInfoMessage((data as any)?.message || null);
+        const currentEmptyReason = (data as any)?.emptyReason as string | undefined;
+        setEmptyReason(currentEmptyReason || null);
+        if (nextAlbums.length === 0 && currentStatus !== 'empty' && isTransientEmptyReason(currentEmptyReason)) {
+          shouldFinalize = false;
+          if (attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+            if (active) {
+              await fetchCatalog(attempt + 1, true);
+            }
+            return;
+          }
+        }
         if (nextAlbums.length === 0 && attempt === 0 && mode === 'preview') {
           setRetryCount(1);
           await new Promise((resolve) => setTimeout(resolve, 800));
@@ -62,15 +103,23 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
         if (active) {
           setError('Failed to load catalog');
           setInfoMessage(null);
+          setMetaStatus(null);
+          setEmptyReason(null);
         }
       } finally {
-        if (active) {
+        if (active && shouldFinalize) {
           setLoading(false);
         }
       }
     }
 
-    fetchCatalog(0);
+    if (!(initialData && initialData.mode === mode && !retryCount)) {
+      fetchCatalog(0);
+    } else {
+      setInfoMessage(initialData?.message || null);
+      setEmptyReason(initialData?.emptyReason || null);
+      setLoading(false);
+    }
     return () => {
       active = false;
       controller.abort();
@@ -96,7 +145,11 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
       <div className="py-12 flex flex-col items-center justify-center gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
         <p className="text-sm text-muted-foreground">
-          {retryCount > 0 ? 'Retrying catalog fetch...' : 'Loading catalog...'}
+          {metaStatus === 'rate_limited'
+            ? 'Rate limited, retrying catalog...'
+            : retryCount > 0
+              ? 'Retrying catalog fetch...'
+              : 'Loading catalog...'}
         </p>
       </div>
     );
@@ -114,12 +167,26 @@ export function ArtistCatalog({ artistMbid, artistName }: ArtistCatalogProps) {
   }
 
   if (albums.length === 0) {
+    const terminalEmpty =
+      (metaStatus === 'empty' && !isTransientEmptyReason(emptyReason || undefined)) ||
+      (!metaStatus && !isTransientEmptyReason(emptyReason || undefined));
     return (
       <div className="py-12 text-center">
-        <Disc className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-        <p className="text-muted-foreground">
-          {infoMessage || `No releases found for ${artistName}`}
-        </p>
+        {terminalEmpty ? (
+          <>
+            <Disc className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+            <p className="text-muted-foreground">
+              {infoMessage || `No releases found for ${artistName}`}
+            </p>
+          </>
+        ) : (
+          <>
+            <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin text-primary" />
+            <p className="text-muted-foreground">
+              Fetching catalog from fallback sources...
+            </p>
+          </>
+        )}
       </div>
     );
   }

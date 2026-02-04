@@ -1,33 +1,35 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { GenreCard } from '@/components/genre-card';
+import { HomeGenreGrid } from '@/components/home-genre-grid';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
-import { getAllGenres } from '@/lib/genres';
+import { getAllGenres, TAXONOMY_CACHE_TAG } from '@/lib/genres';
 import { getBaseUrl } from '@/lib/server/base-url';
 import type { Genre } from '@/lib/types';
+import type { GenresPreviewDTO, ApiResponse } from '@/lib/contracts/api';
 
-async function getGenrePreviews(): Promise<Genre[]> {
+async function getGenrePreviews(): Promise<{ genres: Genre[]; status?: string }> {
   try {
     const baseUrl = getBaseUrl();
     const res = await fetch(`${baseUrl}/api/genres?preview=1`, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 3600, tags: [TAXONOMY_CACHE_TAG] },
     });
     if (!res.ok) {
-      return getAllGenres();
+      return { genres: getAllGenres(), status: 'empty' };
     }
-    const payload = await res.json();
+    const payload = (await res.json()) as ApiResponse<GenresPreviewDTO>;
     if (payload?.ok === true && Array.isArray(payload?.data?.genres)) {
-      return payload.data.genres;
+      return { genres: payload.data.genres as Genre[], status: payload.meta?.status };
     }
-    return getAllGenres();
+    return { genres: getAllGenres(), status: 'empty' };
   } catch {
-    return getAllGenres();
+    return { genres: getAllGenres(), status: 'empty' };
   }
 }
 
 export default async function Page() {
-  const genres = await getGenrePreviews();
+  const preview = await getGenrePreviews();
+  const genres = preview.genres;
 
   return (
     <main className="min-h-screen bg-background">
@@ -133,17 +135,7 @@ export default async function Page() {
         </div>
 
         {/* Genre Grid with Collage Layout */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 md:gap-12">
-          {genres.map((genre, index) => {
-            return (
-              <GenreCard
-                key={genre.slug}
-                genre={genre}
-                index={index}
-              />
-            );
-          })}
-        </div>
+        <HomeGenreGrid initialGenres={genres} initialStatus={preview.status} />
       </section>
 
       {/* About Section */}

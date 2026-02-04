@@ -5,12 +5,14 @@ import { TrackCard } from './track-card';
 import { AudioPlayer } from './audio-player';
 import { Loader2 } from 'lucide-react';
 import type { Recommendations, ScoredTrack } from '@/lib/recommendation-engine';
+import type { ArtistRecommendationsDTO } from '@/lib/contracts/api';
 import { getRecommendationReason } from '@/lib/recommendation-engine';
-import { fetchJsonCached } from '@/lib/client/fetch-json';
+import { apiFetchWithMeta } from '@/lib/client/api-fetch';
 
 interface ArtistRecommendationsProps {
   artistMbid: string;
   artistName: string;
+  initialData?: ArtistRecommendationsDTO;
 }
 
 type Category = 'popular' | 'trending' | 'gems' | 'unique' | 'unpopular';
@@ -23,24 +25,46 @@ const CATEGORIES: { id: Category; label: string; description: string }[] = [
   { id: 'unpopular', label: 'Unpopular', description: 'Rare finds for true fans' },
 ];
 
-export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommendationsProps) {
-  const [recommendations, setRecommendations] = useState<Recommendations | null>(null);
-  const [loading, setLoading] = useState(true);
+function normalizeRecommendations(
+  input?: Record<string, any[]> | Recommendations | null
+): Recommendations | null {
+  if (!input) return null;
+  return {
+    popular: Array.isArray(input.popular) ? input.popular : [],
+    trending: Array.isArray(input.trending) ? input.trending : [],
+    gems: Array.isArray(input.gems) ? input.gems : [],
+    unique: Array.isArray(input.unique) ? input.unique : [],
+    unpopular: Array.isArray(input.unpopular) ? input.unpopular : [],
+  };
+}
+
+export function ArtistRecommendations({ artistMbid, artistName, initialData }: ArtistRecommendationsProps) {
+  const [recommendations, setRecommendations] = useState<Recommendations | null>(
+    normalizeRecommendations(initialData?.categories)
+  );
+  const [infoMessage, setInfoMessage] = useState<string | null>(initialData?.message || null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category>('popular');
   const [currentTrack, setCurrentTrack] = useState<ScoredTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [metaStatus, setMetaStatus] = useState<string | null>(null);
+  const [emptyReason, setEmptyReason] = useState<string | null>(null);
+
+  const isTransientEmptyReason = (reason?: string) =>
+    reason === 'rate_limited' || reason === 'provider_timeout';
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
 
     async function fetchRecommendations(attempt: number, refresh = false) {
+      let shouldFinalize = true;
       try {
         setLoading(true);
         setError(null);
         const url = `/api/artists/${artistMbid}/recommendations${refresh ? '?refresh=1' : ''}`;
-        const data = await fetchJsonCached<Recommendations>(url, {
+        const result = await apiFetchWithMeta<ArtistRecommendationsDTO>(url, {
           cacheKey: `recommendations:${artistMbid}:${refresh ? 'refresh' : 'base'}`,
           ttlMs: 60_000,
           signal: controller.signal,
@@ -51,9 +75,35 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
           retryDelayMs: 400,
         });
         if (!active) return;
-        const hasAny = Object.values(data || {}).some(
+        const currentStatus = result.meta?.status as string | undefined;
+        setMetaStatus(currentStatus || null);
+        const currentEmptyReason = result.meta?.emptyReason as string | undefined;
+        setEmptyReason(currentEmptyReason || null);
+        if (currentStatus === 'rate_limited' && attempt < 2) {
+          shouldFinalize = false;
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (active) {
+            await fetchRecommendations(attempt + 1, true);
+          }
+          return;
+        }
+        const data = result.data;
+        const categories = normalizeRecommendations(data.categories || data);
+        if (!categories) {
+          setRecommendations(null);
+          return;
+        }
+        const hasAny = Object.values(categories || {}).some(
           (list) => Array.isArray(list) && list.length > 0
         );
+        if (!hasAny && currentStatus !== 'empty' && isTransientEmptyReason(currentEmptyReason) && attempt < 2) {
+          shouldFinalize = false;
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+          if (active) {
+            await fetchRecommendations(attempt + 1, true);
+          }
+          return;
+        }
         if (!hasAny && attempt === 0) {
           await new Promise((resolve) => setTimeout(resolve, 700));
           if (active) {
@@ -61,7 +111,8 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
           }
           return;
         }
-        setRecommendations(data);
+        setRecommendations(categories);
+        setInfoMessage(data.message || null);
       } catch (err) {
         if ((err as Error)?.name === 'AbortError') {
           return;
@@ -69,15 +120,23 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
         console.error('[OffDaWallV2] Recommendations fetch error:', err);
         if (active) {
           setError('Could not load recommendations');
+          setInfoMessage(null);
+          setMetaStatus(null);
+          setEmptyReason(null);
         }
       } finally {
-        if (active) {
+        if (active && shouldFinalize) {
           setLoading(false);
         }
       }
     }
 
-    fetchRecommendations(0);
+    if (!initialData) {
+      fetchRecommendations(0);
+    } else {
+      setLoading(false);
+      setInfoMessage(initialData?.message || null);
+    }
     return () => {
       active = false;
       controller.abort();
@@ -157,6 +216,9 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
       {loading && (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="ml-3 text-sm text-muted-foreground">
+            {metaStatus === 'rate_limited' ? 'Rate limited, retrying recommendations...' : 'Loading recommendations...'}
+          </p>
         </div>
       )}
 
@@ -171,11 +233,23 @@ export function ArtistRecommendations({ artistMbid, artistName }: ArtistRecommen
       {/* Empty State */}
       {isEmpty && (
         <div className="bg-card border-2 border-border p-12 text-center">
-          <div className="text-4xl mb-4">🎵</div>
-          <h3 className="text-xl font-bold mb-2">No Tracks Found</h3>
-          <p className="text-sm text-muted-foreground">
-            No tracks match the {activeCategory} criteria. Try a different category.
-          </p>
+          {metaStatus === 'empty' && !isTransientEmptyReason(emptyReason || undefined) ? (
+            <>
+              <div className="text-4xl mb-4">🎵</div>
+              <h3 className="text-xl font-bold mb-2">No Tracks Found</h3>
+              <p className="text-sm text-muted-foreground">
+                {infoMessage || `No tracks match the ${activeCategory} criteria. Try a different category.`}
+              </p>
+            </>
+          ) : (
+            <>
+              <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+              <h3 className="text-xl font-bold mb-2">Fetching Recommendations...</h3>
+              <p className="text-sm text-muted-foreground">
+                We are waiting on fallback providers. This usually resolves shortly.
+              </p>
+            </>
+          )}
         </div>
       )}
 

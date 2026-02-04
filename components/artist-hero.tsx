@@ -10,6 +10,9 @@ interface ArtistHeroProps {
 }
 
 export function ArtistHero({ artist }: ArtistHeroProps) {
+  const formatCount = (value: number) =>
+    new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+
   const normalizeUrl = (value?: string) => {
     if (!value) return null;
     if (!value.includes('.')) return null;
@@ -22,6 +25,7 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
   const [imageError, setImageError] = useState(false);
   const resolvedHeroImage = useArtistImage(artist, true, imageError);
   const heroImage = resolvedHeroImage || artist.imageUrl || artist.image;
+  const fans = artist.listeners ?? artist.followers;
 
   return (
     <section className="relative overflow-hidden border-b border-border">
@@ -94,7 +98,7 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
             </div>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
               {artist.country && (
                 <div className="bg-card border border-border p-4">
                   <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
@@ -124,6 +128,17 @@ export function ArtistHero({ artist }: ArtistHeroProps) {
                   </div>
                   <div className="text-lg font-bold text-primary">
                     {Math.round(artist.popularity * 100)}%
+                  </div>
+                </div>
+              )}
+
+              {typeof fans === 'number' && fans > 0 && (
+                <div className="bg-card border border-border p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">
+                    Fans
+                  </div>
+                  <div className="text-lg font-bold text-foreground">
+                    {formatCount(fans)}
                   </div>
                 </div>
               )}

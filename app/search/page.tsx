@@ -1,41 +1,47 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { SearchX } from 'lucide-react';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { ArtistSkeleton } from '@/components/artist-skeleton';
+import { SearchBar } from '@/components/search-bar';
 import type { Artist } from '@/lib/types';
+import type { ArtistPreviewDTO, SearchDTO } from '@/lib/contracts/api';
 import { useArtistImage } from '@/components/hooks/use-artist-image';
 import { FallbackImage } from '@/components/ui/fallback-image';
-import { fetchJsonCached } from '@/lib/client/fetch-json';
+import { apiFetch } from '@/lib/client/api-fetch';
 import { ImagePlaceholder } from '@/components/ui/image-placeholder';
+import { isValidUuid } from '@/lib/ids';
 
 function SearchResults() {
   const searchParams = useSearchParams();
   const query = searchParams.get('q');
-  const [results, setResults] = useState<Artist[]>([]);
+  const [results, setResults] = useState<ArtistPreviewDTO[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
     if (!query) return;
 
     const controller = new AbortController();
     let active = true;
+    const requestId = ++requestSeqRef.current;
 
     const fetchResults = async (attempt: number) => {
       setIsLoading(true);
       try {
-        const url = `/api/search?q=${encodeURIComponent(query)}&details=1`;
-        const data = await fetchJsonCached<{ results?: Artist[] }>(url, {
+        const url = `/api/search?q=${encodeURIComponent(query)}&type=artists&limit=30`;
+        const data = await apiFetch<SearchDTO>(url, {
           cacheKey: `search:${query}:details`,
           ttlMs: 30_000,
           signal: controller.signal,
-          shouldCache: (payload) => Array.isArray(payload?.results) && payload.results.length > 0,
+          shouldCache: (payload) => Array.isArray(payload?.artists) && payload.artists.length > 0,
         });
         if (!active) return;
-        const nextResults = data.results || [];
+        if (requestSeqRef.current !== requestId) return;
+        const nextResults = data.artists || [];
         if (nextResults.length === 0 && attempt === 0) {
           await new Promise((resolve) => setTimeout(resolve, 600));
           if (active) {
@@ -53,7 +59,7 @@ function SearchResults() {
           setResults([]);
         }
       } finally {
-        if (active) {
+        if (active && requestSeqRef.current === requestId) {
           setIsLoading(false);
         }
       }
@@ -69,8 +75,24 @@ function SearchResults() {
   if (!query) {
     return (
       <div className="min-h-screen bg-background">
-        <div className="container mx-auto px-4 py-12">
-          <p className="text-muted-foreground text-center">Enter a search query to find artists</p>
+        <div className="container mx-auto px-4 py-8 md:py-12">
+          <Breadcrumbs items={[{ label: 'Search', href: '/search' }]} />
+          <div className="mb-8">
+            <div className="inline-block mb-4">
+              <div
+                className="text-primary font-bold uppercase text-xs tracking-wider px-3 py-1 border-2 border-primary transform -rotate-1"
+                style={{ fontFamily: 'system-ui, sans-serif' }}
+              >
+                Search
+              </div>
+            </div>
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4">Find Artists</h1>
+            <p className="text-lg text-muted-foreground mb-6">Enter a search query to discover artists.</p>
+            <div className="max-w-xl">
+              <SearchBar />
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">Tip: try searching by artist name, alias, or stage name.</p>
         </div>
       </div>
     );
@@ -129,7 +151,7 @@ function SearchResults() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
             {results.map((artist, index) => (
-              <SearchResultCard key={artist.mbid} artist={artist} index={index} />
+              <SearchResultCard key={`${artist.mbid || artist.name}-${index}`} artist={artist} index={index} />
             ))}
           </div>
         )}
@@ -156,12 +178,21 @@ export default function SearchPage() {
   );
 }
 
-function SearchResultCard({ artist, index }: { artist: Artist; index: number }) {
+function SearchResultCard({ artist, index }: { artist: ArtistPreviewDTO; index: number }) {
   const shouldFetchImage = index < 12;
   const [imageError, setImageError] = useState(false);
-  const imageUrl = useArtistImage(artist, shouldFetchImage, imageError);
-  const resolvedImage = imageUrl || artist.imageUrl || artist.image;
-  const hasArtistLink = Boolean(artist.mbid);
+  const hookArtist: Artist = {
+    mbid: artist.mbid,
+    name: artist.name,
+    genres: artist.tags || [],
+    tags: artist.tags || [],
+    country: artist.area,
+    image: artist.image || undefined,
+    imageUrl: artist.imageUrl || undefined,
+  };
+  const imageUrl = useArtistImage(hookArtist, shouldFetchImage, imageError);
+  const resolvedImage = imageUrl || hookArtist.imageUrl || hookArtist.image;
+  const hasArtistLink = isValidUuid(artist.mbid || '');
 
   const card = (
     <div className="bg-card border-2 border-border p-4 transition-all hover:border-primary hover:rotate-0 hover:scale-105">
@@ -183,13 +214,13 @@ function SearchResultCard({ artist, index }: { artist: Artist; index: number }) 
         </div>
       )}
       <h3 className="font-black text-lg mb-1 leading-tight">{artist.name}</h3>
-      {artist.genres && artist.genres.length > 0 && (
+      {artist.tags && artist.tags.length > 0 && (
         <p className="text-sm text-muted-foreground">
-          {artist.genres.slice(0, 2).join(', ')}
+          {artist.tags.slice(0, 2).join(', ')}
         </p>
       )}
-      {artist.country && (
-        <p className="text-xs text-muted-foreground mt-1">{artist.country}</p>
+      {artist.area && (
+        <p className="text-xs text-muted-foreground mt-1">{artist.area}</p>
       )}
     </div>
   );

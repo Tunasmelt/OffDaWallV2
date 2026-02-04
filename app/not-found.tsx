@@ -64,7 +64,7 @@ export default function NotFound() {
                   href={`/genres/${genre.slug}`}
                   className="p-6 bg-card border border-border hover:border-primary transition-colors group"
                 >
-                  <div className="text-4xl mb-2">{genre.icon}</div>
+                  <div className="text-4xl mb-2">♪</div>
                   <div className="font-bold group-hover:text-primary transition-colors">
                     {genre.name}
                   </div>

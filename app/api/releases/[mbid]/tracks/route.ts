@@ -15,7 +15,7 @@ function extractTracks(releaseData: any): Track[] {
       tracks.push({
         id: track.id || `mb-track:${track.position}`,
         title: track.title || track.recording?.title || '',
-        artistName: track.artist?.name || releaseData?.artist-credit?.[0]?.name || '',
+        artistName: track.artist?.name || releaseData?.['artist-credit']?.[0]?.name || '',
         duration: track.length ? Math.round(track.length / 1000) : undefined,
         trackNumber: track.position,
       });

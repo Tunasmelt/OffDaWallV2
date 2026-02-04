@@ -23,7 +23,7 @@ export function PrefetchLink({
   prefetchDelay = 200 
 }: PrefetchLinkProps) {
   const router = useRouter();
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleMouseEnter = () => {
     // Prefetch after a short delay to avoid excessive prefetching

@@ -9,8 +9,14 @@ export function respondOk<T>(
     payloadMode: 'preview' | 'deep';
     providersUsed: string[];
     cache: CacheMeta;
-    fallbackUsed?: string;
+    source?: string;
+    fallbackUsed?: string[];
     emptyReason?: string;
+    status?: 'ok' | 'partial' | 'empty' | 'rate_limited';
+    fastPath?: boolean;
+    requestId?: string;
+    durationMs?: number;
+    providerMs?: Record<string, number>;
   }
 ) {
   const body: any = {
@@ -31,6 +37,12 @@ export function respondError(code: string, message: string, meta: {
   providersUsed: string[];
   cache: CacheMeta;
   provider?: string;
+  status?: 'ok' | 'partial' | 'empty' | 'rate_limited';
+  emptyReason?: string;
+  fastPath?: boolean;
+  requestId?: string;
+  durationMs?: number;
+  providerMs?: Record<string, number>;
 }, status: number = 500) {
   const body: any = {
     ok: false,
@@ -43,6 +55,12 @@ export function respondError(code: string, message: string, meta: {
       payloadMode: meta.payloadMode,
       providersUsed: isDebugMode() ? meta.providersUsed : [],
       cache: meta.cache,
+      status: meta.status,
+      emptyReason: meta.emptyReason,
+      fastPath: meta.fastPath,
+      requestId: meta.requestId,
+      durationMs: meta.durationMs,
+      providerMs: meta.providerMs,
     },
   };
 

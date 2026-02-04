@@ -22,6 +22,7 @@ const PROXY_HOSTS = [
   'lastfm.freetls.fastly.net',
   'lastfm-img2.akamaized.net',
   'userserve-ak.last.fm',
+  'i.scdn.co',
 ];
 
 function shouldProxyHost(host: string) {
@@ -30,6 +31,7 @@ function shouldProxyHost(host: string) {
   if (host === 'theaudiodb.com' || host.endsWith('.theaudiodb.com')) return true;
   if (host === 'last.fm' || host.endsWith('.last.fm')) return true;
   if (host.endsWith('.dzcdn.net')) return true;
+  if (host.endsWith('.scdn.co')) return true;
   if (PROXY_HOSTS.includes(host)) return true;
   return false;
 }

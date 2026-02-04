@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { getGenreBySlug } from '@/lib/genres';
+import { getGenreBySlug, TAXONOMY_CACHE_TAG } from '@/lib/genres';
 import { ArtistCard } from '@/components/artist-card';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { SearchBar } from '@/components/search-bar';
@@ -10,6 +10,7 @@ import { generateGenreMetadata } from '@/lib/metadata';
 import { getBaseUrl } from '@/lib/server/base-url';
 import type { Artist } from '@/lib/types';
 import { resolveArtistImage } from '@/lib/images';
+import type { ApiResponse } from '@/lib/contracts/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,14 +18,14 @@ async function getGenreData(slug: string) {
   try {
     const baseUrl = getBaseUrl();
     const response = await fetch(`${baseUrl}/api/genres/${slug}`, {
-      next: { revalidate: 3600 },
+      next: { revalidate: 3600, tags: [TAXONOMY_CACHE_TAG] },
     });
     
     if (!response.ok) {
       return null;
     }
     
-    const payload = await response.json();
+    const payload = (await response.json()) as ApiResponse<any>;
     if (payload?.ok === true) {
       return payload.data;
     }

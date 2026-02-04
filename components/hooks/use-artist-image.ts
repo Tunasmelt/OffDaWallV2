@@ -2,16 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import type { Artist } from '@/lib/types';
-import { normalizeImageUrl } from '@/lib/images';
+import { normalizeImageUrl, toImageProxyUrl } from '@/lib/images';
 
 const imageCache = new Map<string, string | null>();
-const inFlight = new Map<string, Promise<string | null>>();
+type FetchResult = {
+  url: string | null;
+};
+const inFlight = new Map<string, Promise<FetchResult>>();
 const queue: Array<() => Promise<void>> = [];
 let activeCount = 0;
 const MAX_CONCURRENT = 3;
 const STAGGER_MS = 150;
-const failureCache = new Map<string, { at: number; count: number }>();
-const FAILURE_COOLDOWN_MS = 60_000;
+const TRANSIENT_RETRY_DELAY_MS = 800;
+const TRANSIENT_RETRY_WINDOW_MS = 6_000;
+const MAX_TRANSIENT_RETRIES = 2;
+const retryStateCache = new Map<string, { count: number; at: number }>();
 
 function runQueue() {
   if (activeCount >= MAX_CONCURRENT) return;
@@ -36,8 +41,16 @@ function getCacheKey(artist: Artist) {
 }
 
 export function useArtistImage(artist: Artist, enabled: boolean = true, forceFetch: boolean = false) {
-  const initial = normalizeImageUrl(artist.imageUrl || artist.image) || null;
+  const initial = toImageProxyUrl(normalizeImageUrl(artist.imageUrl || artist.image)) || null;
   const [imageUrl, setImageUrl] = useState<string | null>(initial);
+  const [retryNonce, setRetryNonce] = useState(0);
+
+  useEffect(() => {
+    const nextInitial = toImageProxyUrl(normalizeImageUrl(artist.imageUrl || artist.image)) || null;
+    if (nextInitial) {
+      setImageUrl(nextInitial);
+    }
+  }, [artist.mbid, artist.name, artist.imageUrl, artist.image]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -51,26 +64,27 @@ export function useArtistImage(artist: Artist, enabled: boolean = true, forceFet
       return;
     }
 
-    const failure = failureCache.get(key);
-    if (failure && Date.now() - failure.at < FAILURE_COOLDOWN_MS) {
-      return;
-    }
-
     let request = inFlight.get(key);
     if (!request) {
       const params = new URLSearchParams();
       if (artist.mbid) params.set('mbid', artist.mbid);
       if (artist.name) params.set('name', artist.name);
 
-      request = new Promise<string | null>((resolve) => {
+      request = new Promise<FetchResult>((resolve) => {
         enqueue(async () => {
           try {
-            const payload = await fetch(`/api/artist-image?${params.toString()}`)
-              .then((res) => res.json());
+            const response = await fetch(`/api/artist-image?${params.toString()}`);
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+              resolve({ url: null });
+              return;
+            }
             const data = payload?.ok ? payload.data : payload;
-            resolve(normalizeImageUrl(data?.imageUrl) || null);
+            const normalized = normalizeImageUrl(data?.imageUrl);
+            const url = toImageProxyUrl(normalized) || normalized || null;
+            resolve({ url });
           } catch {
-            resolve(null);
+            resolve({ url: null });
           } finally {
             inFlight.delete(key);
           }
@@ -80,16 +94,26 @@ export function useArtistImage(artist: Artist, enabled: boolean = true, forceFet
       inFlight.set(key, request);
     }
 
-    request.then((url) => {
-      if (url) {
-        imageCache.set(key, url);
+    request.then((result) => {
+      if (result.url) {
+        imageCache.set(key, result.url);
+        retryStateCache.delete(key);
       } else {
-        const prev = failureCache.get(key);
-        failureCache.set(key, { at: Date.now(), count: (prev?.count || 0) + 1 });
+        const now = Date.now();
+        const retryState = retryStateCache.get(key) || { count: 0, at: 0 };
+        if (retryState.count < MAX_TRANSIENT_RETRIES || now - retryState.at > TRANSIENT_RETRY_WINDOW_MS) {
+          retryStateCache.set(key, { count: (retryState.count || 0) + 1, at: now });
+          setTimeout(() => {
+            const known = imageCache.get(key);
+            if (!known) {
+              setRetryNonce((value) => value + 1);
+            }
+          }, TRANSIENT_RETRY_DELAY_MS);
+        }
       }
-      setImageUrl(url);
+      setImageUrl(result.url);
     });
-  }, [artist.mbid, artist.name, enabled, forceFetch, imageUrl]);
+  }, [artist.mbid, artist.name, enabled, forceFetch, imageUrl, retryNonce]);
 
   return imageUrl;
 }

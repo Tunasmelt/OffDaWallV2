@@ -1,17 +1,14 @@
 import { getGenreBySlug } from '@/lib/genres';
 import { getArtistsForGenre } from '@/lib/services/aggregator';
 import { CACHE_TTL, getFromCacheWithMeta, setCache } from '@/lib/cache';
-import { normalizeImageUrl } from '@/lib/images';
+import { normalizeImageUrl, toImageProxyUrl } from '@/lib/images';
 import { logger } from '@/lib/logger';
-import * as AudioDB from '@/lib/services/audiodb';
-import * as Deezer from '@/lib/services/deezer';
-import * as LastFm from '@/lib/services/lastfm';
-import { resolveArtistImage as resolveArtistImageData } from '@/lib/services/image-resolver';
 import { respondOk, respondError } from '@/lib/api-response';
 import { isDebugMode, logEvent } from '@/lib/observability';
 import { safeCall } from '@/lib/provider-safe';
 import { isLikelyArtistType, isValidUuid } from '@/lib/ids';
 import type { Artist } from '@/lib/types';
+import * as Spotify from '@/lib/services/spotify';
 
 // Calculate popularity score based on available data
 function calculatePopularityScore(artist: Artist): number {
@@ -63,83 +60,6 @@ function categorizeArtists(artists: Artist[]) {
   };
 }
 
-async function enrichArtistImages(
-  artists: Artist[],
-  providersUsed: string[],
-  maxAudioDb = 4,
-  maxDeezer = 6,
-  maxLastFm = 6,
-  maxResolve = 8
-) {
-  let audioDbUsed = 0;
-  let deezerUsed = 0;
-  let lastFmUsed = 0;
-  let resolvedUsed = 0;
-
-  for (const artist of artists) {
-    if (artist.imageUrl || artist.image) continue;
-
-    if (audioDbUsed < maxAudioDb) {
-      const audioDbResult = await safeCall('audiodb', () => AudioDB.getArtistByMBID(artist.mbid));
-      const audioDbData = audioDbResult.ok ? audioDbResult.data : null;
-      if (audioDbData?.imageUrl) {
-        artist.imageUrl = normalizeImageUrl(audioDbData.imageUrl);
-        audioDbUsed += 1;
-        if (!providersUsed.includes('audiodb')) {
-          providersUsed.push('audiodb');
-        }
-        continue;
-      }
-    }
-
-    if (process.env.LASTFM_API_KEY && lastFmUsed < maxLastFm) {
-      const lfInfoResult = await safeCall('lastfm', () =>
-        artist.mbid
-          ? LastFm.getArtistInfoByMbid(artist.mbid)
-          : LastFm.getArtistInfoByName(artist.name)
-      );
-      const lfInfo = lfInfoResult.ok ? lfInfoResult.data : null;
-      const lfImage = LastFm.extractArtistImage(lfInfo);
-      if (lfImage) {
-        artist.imageUrl = normalizeImageUrl(lfImage);
-        lastFmUsed += 1;
-        if (!providersUsed.includes('lastfm')) {
-          providersUsed.push('lastfm');
-        }
-        continue;
-      }
-    }
-
-    if (deezerUsed < maxDeezer) {
-      const deezerResult = await safeCall('deezer', () => Deezer.searchArtist(artist.name));
-      const deezerArtist = deezerResult.ok ? deezerResult.data : null;
-      if (deezerArtist?.picture_big) {
-        artist.imageUrl = normalizeImageUrl(deezerArtist.picture_big);
-        deezerUsed += 1;
-        if (!providersUsed.includes('deezer')) {
-          providersUsed.push('deezer');
-        }
-        continue;
-      }
-    }
-
-    if (resolvedUsed < maxResolve) {
-      const resolvedResult = await safeCall('image-resolver', () =>
-        resolveArtistImageData({ mbid: artist.mbid, name: artist.name })
-      );
-      const resolved = resolvedResult.ok ? resolvedResult.data : null;
-      if (resolved.imageUrl) {
-        artist.imageUrl = normalizeImageUrl(resolved.imageUrl);
-        resolvedUsed += 1;
-        if (!providersUsed.includes('image-resolver')) {
-          providersUsed.push('image-resolver');
-        }
-        continue;
-      }
-    }
-  }
-}
-
 function normalizeArtistImages(artists: Artist[]) {
   artists.forEach((artist) => {
     const normalized = normalizeImageUrl(artist.imageUrl || artist.image);
@@ -148,6 +68,37 @@ function normalizeArtistImages(artists: Artist[]) {
       artist.image = normalized;
     }
   });
+}
+
+async function enrichTopArtistImagesFast(artists: Artist[], providersUsed: string[]) {
+  if (!artists.length) return;
+  if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) return;
+
+  const targets = artists.filter((artist) => !normalizeImageUrl(artist.imageUrl || artist.image));
+  if (!targets.length) return;
+
+  const workers = 3;
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < targets.length) {
+      const idx = cursor++;
+      const artist = targets[idx];
+      const spotifyResult = await safeCall('spotify', () => Spotify.searchArtistByName(artist.name));
+      if (!spotifyResult.ok || !spotifyResult.data) continue;
+
+      const spotifyImage = normalizeImageUrl(Spotify.extractArtistImage(spotifyResult.data));
+      if (!spotifyImage) continue;
+      const proxied = toImageProxyUrl(spotifyImage) || spotifyImage;
+      artist.imageUrl = proxied;
+      artist.image = proxied;
+      if (!providersUsed.includes('spotify')) {
+        providersUsed.push('spotify');
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(workers, targets.length) }, () => worker()));
 }
 
 export async function GET(
@@ -241,23 +192,9 @@ export async function GET(
     const topSelection = isPreview ? topArtists.slice(0, 6) : topArtists;
     const upcomingSelection = isPreview ? upcomingArtists.slice(0, 4) : upcomingArtists;
 
-    // Enrich images for displayed artists (limited to avoid rate limits)
-    await enrichArtistImages(
-      topSelection,
-      providersUsed,
-      isPreview ? 1 : 4,
-      isPreview ? 1 : 6,
-      isPreview ? 1 : 6,
-      isPreview ? 3 : 12
-    );
-    await enrichArtistImages(
-      upcomingSelection,
-      providersUsed,
-      isPreview ? 1 : 4,
-      isPreview ? 1 : 6,
-      isPreview ? 1 : 6,
-      isPreview ? 2 : 10
-    );
+    // Keep cold-start fast: enrich a tiny above-the-fold subset only.
+    const eagerSelection = [...topSelection.slice(0, 6), ...upcomingSelection.slice(0, 2)];
+    await enrichTopArtistImagesFast(eagerSelection, providersUsed);
 
     normalizeArtistImages(topSelection);
     normalizeArtistImages(upcomingSelection);

@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import type { Album } from '@/lib/types';
 import { AudioPlayer } from './audio-player';
 import { FallbackImage } from '@/components/ui/fallback-image';
-import { fetchJsonCached } from '@/lib/client/fetch-json';
+import { apiFetch } from '@/lib/client/api-fetch';
 import { ImagePlaceholder } from '@/components/ui/image-placeholder';
 
 interface AlbumCardProps {
@@ -52,7 +52,7 @@ export function AlbumCard({ album, index }: AlbumCardProps) {
         : null;
 
       try {
-        const primary = await fetchJsonCached<any>(primaryUrl, {
+        const primary = await apiFetch<any>(primaryUrl, {
           cacheKey: `tracks:${album.releaseMbid || album.releaseGroupMbid}`,
           ttlMs: 5 * 60_000,
           signal: controller.signal,
@@ -63,7 +63,7 @@ export function AlbumCard({ album, index }: AlbumCardProps) {
         }
 
         if (fallbackUrl) {
-          const fallback = await fetchJsonCached<any>(fallbackUrl, {
+          const fallback = await apiFetch<any>(fallbackUrl, {
             cacheKey: `tracks:${album.releaseGroupMbid}`,
             ttlMs: 5 * 60_000,
             signal: controller.signal,

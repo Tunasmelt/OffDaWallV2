@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  allowedDevOrigins: ['localhost', '127.0.0.1', '192.168.1.239'],
   typescript: {
     ignoreBuildErrors: false,
   },
@@ -45,7 +46,7 @@ const nextConfig = {
     formats: ['image/webp'],
   },
   experimental: {
-    optimizePackageImports: ['@/components', '@/lib'],
+    cpus: 1,
   },
   async headers() {
     const securityHeaders = [

@@ -9,19 +9,22 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import type { Artist } from '@/lib/types';
+import type { ArtistPreviewDTO, SearchDTO } from '@/lib/contracts/api';
 import { useArtistImage } from './hooks/use-artist-image';
 import { FallbackImage } from '@/components/ui/fallback-image';
-import { fetchJsonCached } from '@/lib/client/fetch-json';
+import { apiFetch } from '@/lib/client/api-fetch';
+import { isValidUuid } from '@/lib/ids';
 
 export function SearchBar() {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<Artist[]>([]);
+  const [suggestions, setSuggestions] = useState<ArtistPreviewDTO[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const requestSeqRef = useRef(0);
 
   // Debounced search for autocomplete
   const fetchSuggestions = useCallback(async (searchQuery: string) => {
@@ -35,18 +38,20 @@ export function SearchBar() {
     }
     const controller = new AbortController();
     abortRef.current = controller;
+    const requestId = ++requestSeqRef.current;
 
     setIsLoading(true);
     try {
-      const data = await fetchJsonCached<{ results?: Artist[] }>(
-        `/api/search?q=${encodeURIComponent(searchQuery)}`,
+      const data = await apiFetch<SearchDTO>(
+        `/api/search?q=${encodeURIComponent(searchQuery)}&type=artists&limit=8`,
         {
           cacheKey: `search-suggest:${searchQuery}`,
           ttlMs: 15_000,
           signal: controller.signal,
         }
       );
-      setSuggestions(data.results?.slice(0, 5) || []);
+      if (requestSeqRef.current !== requestId) return;
+      setSuggestions(data.artists?.slice(0, 5) || []);
     } catch (error) {
       if ((error as Error)?.name === 'AbortError') {
         return;
@@ -54,7 +59,9 @@ export function SearchBar() {
       console.error('[OffDaWallV2] Autocomplete error:', error);
       setSuggestions([]);
     } finally {
-      setIsLoading(false);
+      if (requestSeqRef.current === requestId) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -125,7 +132,7 @@ export function SearchBar() {
         <Input
           id="global-search"
           type="text"
-          placeholder="Search artists... (⌘K)"
+          placeholder="Search Artists"
           value={query}
           onChange={handleInputChange}
           onFocus={() => query.length >= 2 && setShowSuggestions(true)}
@@ -181,15 +188,25 @@ function SuggestionItem({
   artist,
   onSelect,
 }: {
-  artist: Artist;
+  artist: ArtistPreviewDTO;
   onSelect: () => void;
 }) {
-  const imageUrl = useArtistImage(artist, true);
-  const resolvedImage = imageUrl || artist.imageUrl || artist.image;
+  const hasArtistLink = isValidUuid(artist.mbid || '');
+  const hookArtist: Artist = {
+    mbid: artist.mbid,
+    name: artist.name,
+    genres: artist.tags || [],
+    tags: artist.tags || [],
+    country: artist.area,
+    image: artist.image || undefined,
+    imageUrl: artist.imageUrl || undefined,
+  };
+  const imageUrl = useArtistImage(hookArtist, true);
+  const resolvedImage = imageUrl || hookArtist.imageUrl || hookArtist.image;
 
   return (
     <Link
-      href={`/artists/${artist.mbid}`}
+      href={hasArtistLink ? `/artists/${artist.mbid}` : '/search'}
       onClick={onSelect}
       className="flex items-center gap-3 p-2 rounded hover:bg-muted transition-colors"
     >
@@ -206,9 +223,9 @@ function SuggestionItem({
       )}
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm truncate">{artist.name}</div>
-        {artist.genres && artist.genres.length > 0 && (
+        {artist.tags && artist.tags.length > 0 && (
           <div className="text-xs text-muted-foreground truncate">
-            {artist.genres.slice(0, 2).join(', ')}
+            {artist.tags.slice(0, 2).join(', ')}
           </div>
         )}
       </div>

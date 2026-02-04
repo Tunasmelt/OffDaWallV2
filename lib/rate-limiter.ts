@@ -103,6 +103,30 @@ export const deezerLimiter = new RateLimiter({
   maxWaitMs: 2000,
 });
 
+export const spotifyLimiter = new RateLimiter({
+  maxRequests: 10,
+  windowMs: 1000, // 10 requests per second
+  maxWaitMs: 1000,
+});
+
+export const lastfmLimiter = new RateLimiter({
+  maxRequests: 5,
+  windowMs: 1000, // 5 requests per second
+  maxWaitMs: 1000,
+});
+
+export const coverArtLimiter = new RateLimiter({
+  maxRequests: 5,
+  windowMs: 1000, // 5 requests per second
+  maxWaitMs: 1500,
+});
+
+export const imageProxyLimiter = new RateLimiter({
+  maxRequests: 10,
+  windowMs: 1000, // 10 requests per second
+  maxWaitMs: 1500,
+});
+
 // Generic rate limiter factory
 export function createRateLimiter(config: RateLimitConfig): RateLimiter {
   return new RateLimiter(config);

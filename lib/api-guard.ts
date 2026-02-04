@@ -51,7 +51,7 @@ export function getBearerToken(request: Request): string | null {
 }
 
 export function requireAdmin(request: Request): { ok: boolean; status: number; message?: string } {
-  const token = process.env.ADMIN_API_TOKEN;
+  const token = process.env.ADMIN_API_TOKEN || process.env.ADMIN_TOKEN;
   if (!token) {
     return {
       ok: process.env.NODE_ENV !== 'production',

@@ -18,6 +18,7 @@ export interface Artist {
   popularity?: number;
   popularityScore?: number;
   listeners?: number;
+  followers?: number;
   playCount?: number;
   relatedArtists?: RelatedArtist[];
   // Social links from AudioDB
@@ -44,6 +45,7 @@ export interface Track {
   rank?: number;
   listeners?: number;
   playCount?: number;
+  externalUrl?: string;
 }
 
 export interface Album {

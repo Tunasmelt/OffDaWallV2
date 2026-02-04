@@ -17,6 +17,7 @@ import { getBaseUrl } from '@/lib/server/base-url';
 import type { Artist } from '@/lib/types';
 import { isValidUuid } from '@/lib/ids';
 import { isDebugMode } from '@/lib/observability';
+import type { ApiResponse, ArtistProfileDTO, ArtistCatalogDTO, ArtistRecommendationsDTO } from '@/lib/contracts/api';
 
 type ArtistFetchResult = {
   status: number;
@@ -36,23 +37,62 @@ const getArtist = cache(async (mbid: string): Promise<ArtistFetchResult> => {
     const baseUrl = getBaseUrl();
     
     const res = await fetch(`${baseUrl}/api/artists/${mbid}`, {
-      next: { revalidate: 86400 }, // 24 hours
+      cache: 'no-store',
     });
 
     const status = res.status;
-    const payload = await res.json().catch(() => null);
+    const payload = (await res.json().catch(() => null)) as ApiResponse<ArtistProfileDTO> | null;
     if (res.ok && payload?.ok === true) {
-      return { status, artist: payload.data, meta: payload?.meta };
+      return { status, artist: payload.data as unknown as Artist, meta: payload?.meta };
     }
+    const payloadError = payload && !payload.ok ? payload.error : undefined;
     return {
       status,
       artist: null,
-      error: payload?.error,
+      error: payloadError,
       meta: payload?.meta,
     };
   } catch (error) {
     console.error('[OffDaWallV2] Error fetching artist:', error);
     return { status: 503, artist: null, error: { message: 'fetch_failed' } };
+  }
+});
+
+const getArtistCatalog = cache(async (mbid: string): Promise<ArtistCatalogDTO | null> => {
+  try {
+    const baseUrl = getBaseUrl();
+    const res = await fetch(`${baseUrl}/api/artists/${mbid}/catalog?mode=preview`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const payload = (await res.json()) as ApiResponse<ArtistCatalogDTO>;
+    if (payload?.ok) {
+      return payload.data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+});
+
+const getArtistRecommendations = cache(async (mbid: string): Promise<ArtistRecommendationsDTO | null> => {
+  try {
+    const baseUrl = getBaseUrl();
+    const res = await fetch(`${baseUrl}/api/artists/${mbid}/recommendations`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const payload = (await res.json()) as ApiResponse<ArtistRecommendationsDTO>;
+    if (payload?.ok) {
+      return payload.data;
+    }
+    return null;
+  } catch {
+    return null;
   }
 });
 
@@ -138,6 +178,16 @@ export default async function ArtistPage({
     );
   }
 
+  const [catalogResult, recommendationsResult] = await Promise.allSettled([
+    getArtistCatalog(decoded),
+    getArtistRecommendations(decoded),
+  ]);
+
+  const catalog =
+    catalogResult.status === 'fulfilled' ? catalogResult.value : null;
+  const recommendations =
+    recommendationsResult.status === 'fulfilled' ? recommendationsResult.value : null;
+
   return (
     <main className="min-h-screen bg-background">
       {/* Header */}
@@ -198,12 +248,20 @@ export default async function ArtistPage({
 
       {/* Music Catalog */}
       <section className="container mx-auto px-4 py-12 md:py-16 border-t border-border">
-        <ArtistCatalog artistMbid={artist.mbid} artistName={artist.name} />
+        <ArtistCatalog
+          artistMbid={artist.mbid}
+          artistName={artist.name}
+          initialData={catalog || undefined}
+        />
       </section>
 
       {/* AI Recommendations */}
       <section className="container mx-auto px-4 py-12 md:py-16 border-t border-border">
-        <ArtistRecommendations artistMbid={artist.mbid} artistName={artist.name} />
+        <ArtistRecommendations
+          artistMbid={artist.mbid}
+          artistName={artist.name}
+          initialData={recommendations || undefined}
+        />
       </section>
 
       {/* Related Artists */}

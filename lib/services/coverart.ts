@@ -1,13 +1,21 @@
 import { normalizeImageUrl } from '../images';
-import { fetchJson } from './http';
+import { providerFetchJson } from '../providers/provider-fetch';
 
 const COVER_ART = 'https://coverartarchive.org';
+type CoverArtPayload = {
+  images?: Array<{
+    front?: boolean;
+    image?: string;
+    thumbnails?: {
+      '250'?: string;
+    };
+  }>;
+};
 
 export async function getCoverArtUrl(releaseMbid: string): Promise<string | null> {
   try {
-    const data = await fetchJson(`${COVER_ART}/release/${releaseMbid}`, {}, {
+    const { data } = await providerFetchJson<CoverArtPayload>('coverart', `${COVER_ART}/release/${releaseMbid}`, {
       timeoutMs: 4500,
-      retries: 1,
       headers: {
         Accept: 'application/json',
       },
@@ -22,9 +30,8 @@ export async function getCoverArtUrl(releaseMbid: string): Promise<string | null
 
 export async function getCoverArtUrlForReleaseGroup(releaseGroupMbid: string): Promise<string | null> {
   try {
-    const data = await fetchJson(`${COVER_ART}/release-group/${releaseGroupMbid}`, {}, {
+    const { data } = await providerFetchJson<CoverArtPayload>('coverart', `${COVER_ART}/release-group/${releaseGroupMbid}`, {
       timeoutMs: 4500,
-      retries: 1,
       headers: {
         Accept: 'application/json',
       },

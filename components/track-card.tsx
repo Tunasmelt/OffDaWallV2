@@ -108,10 +108,24 @@ export function TrackCard({ track, reason, onPlay, isPlaying }: TrackCardProps) 
         </div>
       </div>
 
-      {/* No preview indicator */}
+      {/* No preview fallback */}
       {!track.previewUrl && (
-        <div className="absolute bottom-2 right-2 text-xs text-muted-foreground opacity-50">
-          No preview
+        <div className="absolute bottom-2 right-2">
+          {track.externalUrl ? (
+            <a
+              href={track.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => event.stopPropagation()}
+              className="inline-flex items-center rounded border border-border bg-card px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+            >
+              Open on Spotify
+            </a>
+          ) : (
+            <span className="text-xs text-muted-foreground opacity-50">
+              No preview
+            </span>
+          )}
         </div>
       )}
     </div>

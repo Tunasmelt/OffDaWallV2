@@ -32,10 +32,32 @@ export function FallbackImage({
   const resolvedSrc = !errored && src ? src : fallbackSrc;
   const bypassOptimization = shouldBypassOptimization(resolvedSrc);
   const unoptimized = props.unoptimized || bypassOptimization;
+  const isLocalQueryPath = resolvedSrc.startsWith('/') && resolvedSrc.includes('?');
 
   useEffect(() => {
     setErrored(false);
   }, [src]);
+
+  if (isLocalQueryPath) {
+    const { fill, className, style, sizes } = props;
+    return (
+      <img
+        src={resolvedSrc}
+        alt={alt}
+        className={className}
+        sizes={typeof sizes === 'string' ? sizes : undefined}
+        style={
+          fill
+            ? { position: 'absolute', inset: 0, width: '100%', height: '100%', ...style }
+            : style
+        }
+        onError={(event) => {
+          setErrored(true);
+          onError?.(event as any);
+        }}
+      />
+    );
+  }
 
   return (
     <Image
