@@ -80,7 +80,7 @@ export async function searchArtistsByTags(tags: string[], limit: number = 20): P
       `/artist?query=${encodeURIComponent(query)}&limit=${limit}&fmt=json`
     );
 
-    const artists: Artist[] = (data.artists || []).map((mb: MusicBrainzArtist) => ({
+    let artists: Artist[] = (data.artists || []).map((mb: MusicBrainzArtist) => ({
       mbid: mb.id,
       name: mb.name,
       sortName: mb['sort-name'],
@@ -94,11 +94,43 @@ export async function searchArtistsByTags(tags: string[], limit: number = 20): P
       tags: mb.tags?.map(t => t.name) || [],
     }));
 
+    // Fallback: some genre tags (e.g. boom bap variants) can be sparse in compound queries.
+    // Retry with per-tag queries and merge unique artists.
+    if (artists.length === 0 && tags.length > 0) {
+      const perTagLimit = Math.max(8, Math.ceil(limit / Math.min(tags.length, 4)));
+      const merged = new Map<string, Artist>();
+      for (const tag of tags.slice(0, 4)) {
+        const fallbackData = await fetchMusicBrainz(
+          `/artist?query=${encodeURIComponent(`tag:"${tag}"`)}&limit=${perTagLimit}&fmt=json`
+        );
+        const fallbackArtists: Artist[] = (fallbackData.artists || []).map((mb: MusicBrainzArtist) => ({
+          mbid: mb.id,
+          name: mb.name,
+          sortName: mb['sort-name'],
+          disambiguation: mb.disambiguation,
+          type: mb.type,
+          country: mb.country,
+          area: mb.area?.name,
+          beginDate: mb['life-span']?.begin,
+          endDate: mb['life-span']?.end,
+          genres: [],
+          tags: mb.tags?.map(t => t.name) || [],
+        }));
+        for (const artist of fallbackArtists) {
+          if (!merged.has(artist.mbid) && merged.size < limit) {
+            merged.set(artist.mbid, artist);
+          }
+        }
+        if (merged.size >= limit) break;
+      }
+      artists = Array.from(merged.values());
+    }
+
     cache.set(cacheKey, artists, CACHE_TTL.GENRE_DATA);
     return artists;
   } catch (error) {
     console.error('[OffDaWallV2] MusicBrainz search error:', error);
-    return [];
+    throw error;
   }
 }
 
