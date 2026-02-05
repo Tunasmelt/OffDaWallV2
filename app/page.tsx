@@ -4,14 +4,13 @@ import { HomeGenreGrid } from '@/components/home-genre-grid';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
 import { getAllGenres, TAXONOMY_CACHE_TAG } from '@/lib/genres';
-import { getBaseUrl } from '@/lib/server/base-url';
+import { fetchInternalApi } from '@/lib/server/internal-api';
 import type { Genre } from '@/lib/types';
 import type { GenresPreviewDTO, ApiResponse } from '@/lib/contracts/api';
 
 async function getGenrePreviews(): Promise<{ genres: Genre[]; status?: string }> {
   try {
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/genres?preview=1`, {
+    const res = await fetchInternalApi('/api/genres?preview=1', {
       next: { revalidate: 3600, tags: [TAXONOMY_CACHE_TAG] },
     });
     if (!res.ok) {

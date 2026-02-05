@@ -13,7 +13,7 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
 import { generateArtistMetadata } from '@/lib/metadata';
-import { getBaseUrl } from '@/lib/server/base-url';
+import { fetchInternalApi } from '@/lib/server/internal-api';
 import type { Artist } from '@/lib/types';
 import { isValidUuid } from '@/lib/ids';
 import { isDebugMode } from '@/lib/observability';
@@ -34,9 +34,7 @@ type ArtistFetchResult = {
 
 const getArtist = cache(async (mbid: string): Promise<ArtistFetchResult> => {
   try {
-    const baseUrl = getBaseUrl();
-    
-    const res = await fetch(`${baseUrl}/api/artists/${mbid}`, {
+    const res = await fetchInternalApi(`/api/artists/${mbid}`, {
       cache: 'no-store',
     });
 
@@ -60,8 +58,7 @@ const getArtist = cache(async (mbid: string): Promise<ArtistFetchResult> => {
 
 const getArtistCatalog = cache(async (mbid: string): Promise<ArtistCatalogDTO | null> => {
   try {
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/artists/${mbid}/catalog?mode=preview`, {
+    const res = await fetchInternalApi(`/api/artists/${mbid}/catalog?mode=preview`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) {
@@ -79,8 +76,7 @@ const getArtistCatalog = cache(async (mbid: string): Promise<ArtistCatalogDTO | 
 
 const getArtistRecommendations = cache(async (mbid: string): Promise<ArtistRecommendationsDTO | null> => {
   try {
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/artists/${mbid}/recommendations`, {
+    const res = await fetchInternalApi(`/api/artists/${mbid}/recommendations`, {
       next: { revalidate: 3600 },
     });
     if (!res.ok) {

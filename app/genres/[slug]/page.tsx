@@ -7,7 +7,7 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { SearchBar } from '@/components/search-bar';
 import { MobileMenu } from '@/components/mobile-menu';
 import { generateGenreMetadata } from '@/lib/metadata';
-import { getBaseUrl } from '@/lib/server/base-url';
+import { fetchInternalApi } from '@/lib/server/internal-api';
 import type { Artist } from '@/lib/types';
 import { resolveArtistImage } from '@/lib/images';
 import type { ApiResponse } from '@/lib/contracts/api';
@@ -16,8 +16,7 @@ export const dynamic = 'force-dynamic';
 
 async function getGenreData(slug: string) {
   try {
-    const baseUrl = getBaseUrl();
-    const response = await fetch(`${baseUrl}/api/genres/${slug}`, {
+    const response = await fetchInternalApi(`/api/genres/${slug}`, {
       next: { revalidate: 3600, tags: [TAXONOMY_CACHE_TAG] },
     });
     
