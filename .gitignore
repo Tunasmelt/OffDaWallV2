@@ -49,3 +49,4 @@ Desktop.ini
 # tooling artifacts
 coverage/
 playwright-report/
+.agent/memory/transcripts/

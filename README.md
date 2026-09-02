@@ -1,12 +1,24 @@
-# OffDaWallV2
+# OffDaWall
 
-> A modern music discovery and catalog app — server-first Next.js with provider aggregations.
+> Real hip-hop discovery, powered by real music data.
 
-OffDaWallV2 aggregates music metadata, cover art, and provider-specific data (Spotify, MusicBrainz, Last.fm, etc.) and exposes a fast, content-driven frontend plus lightweight internal APIs. The codebase focuses on server-side data aggregation, provider adapters, and a responsive UI built with modern React/Next.js patterns.
+OffDaWall is a server-first Next.js app for finding hip-hop artists across every subgenre — trap, drill, boom bap, cloud rap, West Coast, Southern hip hop, and more. It aggregates artist metadata and cover art from multiple providers (MusicBrainz, Spotify, Deezer, Last.fm, TheAudioDB, Cover Art Archive) into a single, fast, consistent browsing experience.
+
+## Screenshots
+
+**Home** — search and genre-driven discovery
+![Home page](public/screenshots/home.png)
+
+**Genre page** — top artists for a given subgenre (Trap shown)
+![Genre page](public/screenshots/genre.png)
+
+**Search results** — aggregated artist search
+![Search results](public/screenshots/search.png)
 
 **Features**
-- **Unified metadata**: Aggregates data from multiple providers and presents a consistent model.
-- **Image proxying & caching**: Resolves and caches album/artist images for consistent display.
+- **Genre-first discovery**: Browse curated subgenres (Trap, Drill, Boom Bap, Cloud Rap, West Coast, Southern Hip Hop, and more) to surface top and underground artists.
+- **Unified metadata**: Aggregates data from multiple providers and presents a consistent artist model.
+- **Image proxying & caching**: Resolves and caches artist images for consistent display.
 - **Small internal APIs**: Route handlers under `app/api/` provide focused endpoints for the frontend.
 - **Accessibility & theming**: UI built with Tailwind CSS, Radix primitives, and theme support.
 
@@ -49,6 +61,9 @@ pnpm run start
 
 **Project layout (high level)**
 - [app/](app): Next.js App Router — pages, route handlers, and API routes (look under `app/api`)
+  - [app/genres/[slug]/](app/genres): genre landing pages (e.g. `/genres/trap`)
+  - [app/artists/[mbid]/](app/artists): artist detail pages
+  - [app/search/](app/search): search results page
 - [components/](components): UI components and reusable hooks
 - [lib/](lib): utilities, clients, and server/provider implementations
   - [lib/server/services/](lib/server/services): provider adapters (MusicBrainz, Spotify, Deezer, Last.fm, etc.)
@@ -90,4 +105,3 @@ This repository is under a proprietary license owned by `forklift22`. See [LICEN
 ---
 
 For implementation details, inspect [package.json](package.json), `scripts/check-env.mjs`, and the `lib/server/services` adapters.
-
